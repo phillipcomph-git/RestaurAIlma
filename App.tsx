@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Wand2, Palette, ScanLine, Sparkles, RotateCcw,
@@ -5,7 +6,7 @@ import {
   Maximize2, Camera, ImageOff, Heart, Info, Send, Layers, 
   Image as ImageIcon, Undo2, Redo2, Download, Minimize2, Edit3, 
   Moon, Sun, UserCheck, SlidersHorizontal, ChevronLeft, ChevronRight, Key, Cpu, AlertCircle, Trash2,
-  ArrowRight
+  ArrowRight, ExternalLink
 } from 'lucide-react';
 
 import { Uploader } from './components/Uploader';
@@ -94,6 +95,7 @@ const safeStorage = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('restore');
+  const [isKeyMissing, setIsKeyMissing] = useState(false);
   const [imageState, setImageState] = useState<ImageState>({
     file: null, originalPreview: null, processedPreview: null, mimeType: '', history: [], future: []
   });
@@ -136,6 +138,16 @@ export default function App() {
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
   useEffect(() => {
+    // Verifica se a chave de API está configurada no ambiente ou selecionada via ponte
+    const checkKey = async () => {
+      const envKey = process.env.API_KEY;
+      const hasBridgeKey = typeof window !== 'undefined' && (window as any).aistudio && await (window as any).aistudio.hasSelectedApiKey();
+      setIsKeyMissing(!envKey && !hasBridgeKey);
+    };
+    checkKey();
+  }, []);
+
+  useEffect(() => {
     safeStorage.save('restaurai_settings', settings);
     if (isLight) document.body.classList.add('theme-light');
     else document.body.classList.remove('theme-light');
@@ -144,6 +156,14 @@ export default function App() {
   useEffect(() => {
     safeStorage.save('restaurai_history', history);
   }, [history]);
+
+  const handleOpenKeySelector = async () => {
+    if (typeof window !== 'undefined' && (window as any).aistudio) {
+      await (window as any).aistudio.openSelectKey();
+      setIsKeyMissing(false);
+      setErrorMsg(null);
+    }
+  };
 
   const navigateResults = useCallback((direction: 'next' | 'prev') => {
     if (activeTab === 'merge' && mergeState.results && mergeState.results.length > 0) {
@@ -195,7 +215,12 @@ export default function App() {
       }
     } catch (err: any) {
       setStatus('error');
-      setErrorMsg(err.message || "Erro ao mesclar imagens.");
+      if (err.message === "API Key") {
+        setErrorMsg("API Key ausente. Selecione uma chave para continuar no Vercel.");
+        handleOpenKeySelector();
+      } else {
+        setErrorMsg(err.message || "Erro ao mesclar imagens.");
+      }
     }
   };
 
@@ -220,7 +245,12 @@ export default function App() {
       }
     } catch (err: any) {
       setStatus('error');
-      setErrorMsg(err.message || "Erro ao gerar arte.");
+      if (err.message === "API Key") {
+        setErrorMsg("API Key ausente. Selecione uma chave para continuar no Vercel.");
+        handleOpenKeySelector();
+      } else {
+        setErrorMsg(err.message || "Erro ao gerar arte.");
+      }
     }
   };
 
@@ -269,8 +299,8 @@ export default function App() {
     } catch (err: any) {
       setStatus('error');
       if (err.message === "API Key") {
-        setErrorMsg("A chave de API não foi detectada. Configure-a para continuar.");
-        if (typeof window !== 'undefined' && (window as any).aistudio) (window as any).aistudio.openSelectKey();
+        setErrorMsg("A chave de API não foi detectada no Vercel. Selecione uma chave para continuar.");
+        handleOpenKeySelector();
       } else {
         setErrorMsg(err.message || "Ocorreu um erro inesperado.");
       }
@@ -363,6 +393,15 @@ export default function App() {
           </nav>
 
           <div className="flex items-center gap-2">
+            {isKeyMissing && (
+              <button 
+                onClick={handleOpenKeySelector} 
+                className="p-2 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-full border border-yellow-500/30 animate-pulse text-yellow-500 transition-colors"
+                title="Configurar Chave API"
+              >
+                <Key className="w-5 h-5" />
+              </button>
+            )}
             <button onClick={() => setShowAbout(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Sobre"><Info className="w-5 h-5" /></button>
             <button onClick={() => setShowHistory(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Histórico"><History className="w-5 h-5" /></button>
             <button onClick={() => setShowSettings(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Configurações"><Settings className="w-5 h-5" /></button>
@@ -376,6 +415,9 @@ export default function App() {
             <AlertCircle className="w-5 h-5 shrink-0" />
             <div className="flex-1">
               <p>{errorMsg}</p>
+              {isKeyMissing && (
+                <button onClick={handleOpenKeySelector} className="mt-2 text-indigo-600 underline hover:text-indigo-500">Configurar chave agora</button>
+              )}
             </div>
             <button onClick={() => setErrorMsg(null)} className="p-1 hover:bg-red-500/20 rounded-md"><X className="w-4 h-4" /></button>
           </div>
@@ -592,6 +634,30 @@ export default function App() {
 
       <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} title="Configurações" isLight={isLight}>
         <div className="space-y-8">
+          <section>
+            <h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600 mb-4">Chave de API (GCP)</h3>
+            <div className={`p-4 rounded-2xl border ${isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'} mb-4`}>
+              <div className="flex items-center justify-between mb-3">
+                 <span className="text-[10px] uppercase font-bold opacity-60">Status</span>
+                 {isKeyMissing ? (
+                   <span className="text-[9px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full font-bold">Pendente</span>
+                 ) : (
+                   <span className="text-[9px] bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full font-bold">Configurada</span>
+                 )}
+              </div>
+              <p className="text-[9px] text-slate-500 leading-relaxed mb-4">Para funcionar no Vercel sem chaves de ambiente, selecione uma chave paga do seu projeto GCP.</p>
+              <Button onClick={handleOpenKeySelector} className="w-full h-10 text-[10px] uppercase tracking-elegant" icon={Key}>Selecionar Chave</Button>
+              <a 
+                href="https://ai.google.dev/gemini-api/docs/billing" 
+                target="_blank" 
+                rel="noreferrer" 
+                className="mt-3 flex items-center justify-center gap-1.5 text-[8px] uppercase font-bold text-indigo-600 hover:underline"
+              >
+                Docs de Faturamento <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+          </section>
+
           <section>
             <h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600 mb-4">Aparência</h3>
             <div className="flex bg-slate-800/10 p-1 rounded-xl border border-slate-400/20">

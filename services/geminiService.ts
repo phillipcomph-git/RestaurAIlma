@@ -12,9 +12,12 @@ const cleanBase64 = (base64Str: string) => {
 
 // Função auxiliar para inicializar a IA com segurança
 const getAIInstance = () => {
+  // Tenta obter do process.env (injetado pelo Vercel/Build)
   const apiKey = process.env.API_KEY || "";
-  // Se não houver chave, retornamos null ou lançamos um erro capturável pelo front
-  if (!apiKey) {
+  
+  // Se não houver chave no ambiente, lançamos o erro "API Key" 
+  // que o App.tsx interceptará para abrir o seletor visual
+  if (!apiKey || apiKey === "undefined" || apiKey === "") {
     throw new Error("API Key");
   }
   return new GoogleGenAI({ apiKey });

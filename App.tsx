@@ -72,7 +72,6 @@ const ABOUT_CAROUSEL_IMAGES = [
   "https://drive.google.com/thumbnail?id=1siGvNVD186qQmut3tWTXbQloKrUaickB&sz=w800"
 ];
 
-// Utility for safe LocalStorage usage
 const safeStorage = {
   save: (key: string, value: any) => {
     try {
@@ -136,6 +135,9 @@ export default function App() {
   const textMain = isLight ? 'text-slate-950 font-extralight' : 'text-white font-extralight';
   const textSub = isLight ? 'text-slate-700 font-normal' : 'text-slate-400 font-light';
 
+  // Define colors for the utility buttons (Settings, History, About)
+  const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-500 hover:text-yellow-400';
+
   useEffect(() => {
     safeStorage.save('restaurai_settings', settings);
     if (isLight) document.body.classList.add('theme-light');
@@ -147,14 +149,17 @@ export default function App() {
   }, [history]);
 
   const checkApiKeyRequirement = async () => {
-    if (settings.preferredModel === 'gemini-3-pro-image-preview') {
+    // Proactive check for API key in browser environments using the required bridge
+    try {
       // @ts-ignore
       const hasKey = await window.aistudio.hasSelectedApiKey();
-      if (!hasKey) {
+      if (!hasKey || !process.env.API_KEY) {
         // @ts-ignore
         await window.aistudio.openSelectKey();
         return true; 
       }
+    } catch (e) {
+      console.error("Erro ao verificar chave de API:", e);
     }
     return true;
   };
@@ -248,7 +253,7 @@ export default function App() {
 
       setStatus('success');
     } catch (err: any) {
-      if (err.message?.includes("re-selecione sua chave paga")) {
+      if (err.message?.includes("API Key") || err.message?.includes("entity was not found")) {
         // @ts-ignore
         await window.aistudio.openSelectKey();
       }
@@ -285,6 +290,10 @@ export default function App() {
         throw new Error("Nenhum resultado retornado da mesclagem.");
       }
     } catch (err: any) {
+      if (err.message?.includes("API Key")) {
+        // @ts-ignore
+        await window.aistudio.openSelectKey();
+      }
       setErrorMsg(err.message || "Erro ao mesclar as imagens.");
       setStatus('error');
     }
@@ -329,6 +338,10 @@ export default function App() {
         throw new Error("Nenhum resultado retornado da geração.");
       }
     } catch (err: any) {
+      if (err.message?.includes("API Key")) {
+        // @ts-ignore
+        await window.aistudio.openSelectKey();
+      }
       setErrorMsg(err.message || "Erro ao gerar as imagens.");
       setStatus('error');
     }
@@ -376,9 +389,9 @@ export default function App() {
              <button onClick={() => setActiveTab('generate')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'generate' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><ImageIcon className="w-3 h-3" /> Gerar</button>
           </nav>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowAbout(true)} className="p-2 text-indigo-600 hover:text-indigo-700 transition-colors" title="Sobre"><Info className="w-5 h-5" /></button>
-            <button onClick={() => setShowHistory(true)} className="p-2 text-indigo-600 hover:text-indigo-700 transition-colors" title="Histórico"><History className="w-5 h-5" /></button>
-            <button onClick={() => setShowSettings(true)} className="p-2 text-indigo-600 hover:text-indigo-700 transition-colors" title="Configurações"><Settings className="w-5 h-5" /></button>
+            <button onClick={() => setShowAbout(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Sobre"><Info className="w-5 h-5" /></button>
+            <button onClick={() => setShowHistory(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Histórico"><History className="w-5 h-5" /></button>
+            <button onClick={() => setShowSettings(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Configurações"><Settings className="w-5 h-5" /></button>
           </div>
         </div>
       </header>
@@ -688,7 +701,7 @@ function UploaderCompact({ label, current, onSelect, isLight }: any) {
       {current ? ( <img src={current} className="w-full h-full object-cover rounded-xl transition-transform group-hover:scale-105" alt="Preview" /> ) : (
         <div className="flex flex-col items-center p-2 text-center">
           <ImageIcon className="w-5 h-5 text-indigo-600 mb-1" />
-          <span className={`text-[9px] font-bold uppercase tracking-soft ${isLight ? 'text-slate-900' : 'text-slate-500'}`}>{label}</span>
+          <span className={`text-[9px] font-bold uppercase tracking-soft ${isLight ? 'text-slate-950' : 'text-slate-500'}`}>{label}</span>
         </div>
       )}
       <input type="file" className="hidden" onChange={(e:any) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => onSelect(f, r.result as string, f.type); r.readAsDataURL(f); } }} />

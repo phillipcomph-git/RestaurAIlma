@@ -6,6 +6,8 @@ export interface ImageState {
   originalPreview: string | null; // Base64 url
   processedPreview: string | null; // Base64 url
   mimeType: string;
+  history: string[]; // Pilha para desfazer ações
+  future: string[]; // Pilha para refazer ações
 }
 
 export interface MergeState {

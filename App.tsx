@@ -1,11 +1,11 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Wand2, Palette, ScanLine, Sparkles, RotateCcw,
   Settings, History, X, Clock, Zap, MessageSquare, RefreshCw, 
   Maximize2, Camera, ImageOff, Heart, Info, Send, Layers, 
   Image as ImageIcon, Undo2, Redo2, Download, Minimize2, Edit3, 
-  Moon, Sun, UserCheck, SlidersHorizontal, ChevronLeft, ChevronRight, Key, Cpu, AlertCircle, Trash2
+  Moon, Sun, UserCheck, SlidersHorizontal, ChevronLeft, ChevronRight, Key, Cpu, AlertCircle, Trash2,
+  ArrowRight
 } from 'lucide-react';
 
 import { Uploader } from './components/Uploader';
@@ -19,28 +19,14 @@ const RESTORATION_OPTIONS: ActionOption[] = [
     id: 'auto-all',
     label: 'Mágica Total',
     icon: Zap,
-    description: 'Restaura danos, cores e nitidez automaticamente.',
-    prompt: 'Full masterpiece restoration: remove noise, fix cracks/scratches, sharpen details, and apply natural colorization.'
-  },
-  {
-    id: 'remove-bg',
-    label: 'Remover Fundo',
-    icon: ImageOff,
-    description: 'Isola o objeto principal removendo o fundo.',
-    prompt: 'Background removal: Remove the background completely, isolating the main subject.'
-  },
-  {
-    id: 'upscale',
-    label: 'Upscale (4K)',
-    icon: Maximize2,
-    description: 'Aumenta a resolução e remove pixelização.',
-    prompt: 'Super-resolution upscale: Increase image resolution significantly, maintaining sharp details.'
+    description: 'Restaura tudo automaticamente.',
+    prompt: 'Full masterpiece restoration: remove noise, fix cracks, sharpen details, and apply natural colorization.'
   },
   {
     id: 'restore',
     label: 'Limpar Danos',
     icon: ScanLine,
-    description: 'Remove riscos, rasgos e manchas físicas.',
+    description: 'Remove riscos e rasgos físicos.',
     prompt: 'Heavy restoration: fix physical damage like tears, scratches, and stains.'
   },
   {
@@ -54,22 +40,35 @@ const RESTORATION_OPTIONS: ActionOption[] = [
     id: 'enhance',
     label: 'Aprimorar',
     icon: Sparkles,
-    description: 'Melhora o contraste e detalhes finos.',
+    description: 'Melhora contraste e nitidez.',
     prompt: 'Image enhancement: fine-tune contrast and sharpen features.'
+  },
+  {
+    id: 'upscale',
+    label: 'Upscale (4K)',
+    icon: Maximize2,
+    description: 'Aumenta a resolução drasticamente.',
+    prompt: 'Super-resolution upscale: Increase image resolution significantly, maintaining sharp details.'
+  },
+  {
+    id: 'remove-bg',
+    label: 'Remover Fundo',
+    icon: ImageOff,
+    description: 'Isola o objeto principal.',
+    prompt: 'Background removal: Remove the background completely, isolating the main subject.'
   }
 ];
 
-const LOGO_THUMBNAIL_URL = "https://drive.google.com/thumbnail?id=1HDrJBoLQcPsSduQvx1GX5Vs9MkkIbwLA&sz=w800";
+const LOGO_THUMBNAIL_URL = "https://drive.google.com/thumbnail?id=1FyVZ-9tvJCQ2-txXy2yZSbxWkATDwZsK&sz=w800";
 
 const ABOUT_CAROUSEL_IMAGES = [
-  "https://drive.google.com/thumbnail?id=1HDrJBoLQcPsSduQvx1GX5Vs9MkkIbwLA&sz=w800",
+  "https://drive.google.com/thumbnail?id=1FyVZ-9tvJCQ2-txXy2yZSbxWkATDwZsK&sz=w800",
   "https://drive.google.com/thumbnail?id=1qvU6V2KpAl60XSSCicKkmZI90WHNdX8Q&sz=w800",
   "https://drive.google.com/thumbnail?id=16-788ZCK7vsexkBpYYwy7LEYG1QKrsi7&sz=w800",
-  "https://drive.google.com/thumbnail?id=1yKylSvOGMiF0ANi6JKntad68ewqWMCsZ&sz=w800",
-  "https://drive.google.com/thumbnail?id=1f-EBhQxCNG05lufyKkoM0TKMBV5zgpH&sz=w800",
+  "https://drive.google.com/thumbnail?id=1y8mt4eiQquA-LQ9dohIl3Uvp_g3xDgKK&sz=w800",
   "https://drive.google.com/thumbnail?id=1ZxIgVQLxxnAoMYEZ8oZ3Pq7Cw50j1oeV&sz=w800",
-  "https://drive.google.com/thumbnail?id=1CylddNKFy5f2GzC83mma3U6RyIZ88VCc&sz=w800",
-  "https://drive.google.com/thumbnail?id=1siGvNVD186qQmut3tWTXbQloKrUaickB&sz=w800"
+  "https://drive.google.com/thumbnail?id=1yKylSvOGMiF0ANi6JKntad68ewqWMCsZ&sz=w800",
+  "https://drive.google.com/thumbnail?id=1CylddNKFy5f2GzC83mma3U6RyIZ88VCc&sz=w800"
 ];
 
 const safeStorage = {
@@ -96,7 +95,7 @@ const safeStorage = {
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('restore');
   const [imageState, setImageState] = useState<ImageState>({
-    file: null, originalPreview: null, processedPreview: null, mimeType: ''
+    file: null, originalPreview: null, processedPreview: null, mimeType: '', history: [], future: []
   });
   
   const [mergeState, setMergeState] = useState<MergeState>({
@@ -120,7 +119,7 @@ export default function App() {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
   const [chatMessages] = useState<{role: 'user' | 'assistant', text: string}[]>([
-    { role: 'assistant', text: 'Olá! Sou seu assistente de memória. Como posso ajudar hoje?' }
+    { role: 'assistant', text: 'Oi! Sou seu assistente. Posso ajudar a guiar sua restauração.' }
   ]);
 
   const [settings, setSettings] = useState<AppSettings>(() => safeStorage.load('restaurai_settings', { language: 'pt', theme: 'dark', preferredModel: 'gemini-2.5-flash-image' }));
@@ -134,8 +133,7 @@ export default function App() {
   const textMain = isLight ? 'text-slate-950 font-extralight' : 'text-white font-extralight';
   const textSub = isLight ? 'text-slate-700 font-normal' : 'text-slate-400 font-light';
 
-  // Ícones de utilitários em Amarelo no modo Dark, Índigo no modo Light
-  const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-500 hover:text-yellow-400';
+  const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
   useEffect(() => {
     safeStorage.save('restaurai_settings', settings);
@@ -177,72 +175,15 @@ export default function App() {
   }, [navigateResults]);
 
   const handleImageSelect = (file: File, base64: string, mimeType: string) => {
-    setImageState({ file, originalPreview: base64, processedPreview: null, mimeType });
+    setImageState({ file, originalPreview: base64, processedPreview: null, mimeType, history: [], future: [] });
     setImageDescription(null);
     setStatus('idle');
     setErrorMsg(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleMergeImageSelect = (slot: 'A' | 'B', file: File, base64: string, mimeType: string) => {
-    setMergeState(prev => ({
-      ...prev,
-      [slot === 'A' ? 'imageA' : 'imageB']: base64,
-      [slot === 'A' ? 'mimeTypeA' : 'mimeTypeB']: mimeType,
-      results: null,
-      resultIndex: 0
-    }));
-    setErrorMsg(null);
-  };
-
-  const handleGenerateImageSelect = (file: File, base64: string, mimeType: string) => {
-    setGenerateState(prev => ({
-      ...prev,
-      baseImage: base64,
-      baseMimeType: mimeType,
-      results: null,
-      resultIndex: 0
-    }));
-    setErrorMsg(null);
-  };
-
-  const handleProcess = async (mode: RestorationMode, useProcessedAsBase = false) => {
-    const baseImage = useProcessedAsBase ? imageState.processedPreview : imageState.originalPreview;
-    if (!baseImage) return;
-
-    setStatus('processing');
-    setActiveMode(mode);
-    setErrorMsg(null);
-
-    const promptBase = mode === 'custom' ? customPrompt : RESTORATION_OPTIONS.find(o => o.id === mode)?.prompt || '';
-    const faceDesc = preserveFacialTraits ? "CRITICAL: Do NOT alter facial features." : "Enhance facial details.";
-    const finalPrompt = `${promptBase}. Strength: ${restorationStrength}%. ${faceDesc}`;
-
-    try {
-      const result = await processImage(baseImage, imageState.mimeType, finalPrompt, settings.preferredModel);
-      setImageState(prev => ({ ...prev, processedPreview: result.base64 }));
-      setImageDescription(result.description || null);
-      
-      setHistory(prev => [{
-        id: Date.now().toString(),
-        original: baseImage,
-        processed: result.base64,
-        mode: mode === 'custom' ? 'Personalizado' : (RESTORATION_OPTIONS.find(o => o.id === mode)?.label || mode),
-        timestamp: Date.now(),
-        genModel: result.model,
-        description: result.description
-      }, ...prev].slice(0, 8));
-
-      setStatus('success');
-    } catch (err: any) {
-      setErrorMsg(err.message || "Ocorreu um erro inesperado ao analisar a imagem.");
-      setStatus('error');
-    }
-  };
-
   const handleMergeAction = async () => {
     if (!mergeState.imageA || !mergeState.imageB || !customPrompt.trim()) return;
-    
     setStatus('processing');
     setErrorMsg(null);
     try {
@@ -250,38 +191,21 @@ export default function App() {
       if (results && results.length > 0) {
         setMergeState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
         setImageDescription(results[0].description || null);
-        
-        const newHistoryItems: HistoryItem[] = results.map((r, i) => ({
-          id: `${Date.now()}-merge-${i}`,
-          original: mergeState.imageA!,
-          processed: r.base64,
-          mode: 'Mesclagem',
-          timestamp: Date.now(),
-          genModel: r.model,
-          description: r.description
-        }));
-        
-        setHistory(prev => [...newHistoryItems, ...prev].slice(0, 8));
         setStatus('success');
-      } else {
-        throw new Error("Nenhum resultado retornado.");
       }
     } catch (err: any) {
-      setErrorMsg(err.message || "Erro ao mesclar as imagens.");
       setStatus('error');
+      setErrorMsg(err.message || "Erro ao mesclar imagens.");
     }
   };
 
   const handleGenerate = async (isRefining = false) => {
     const currentPrompt = isRefining ? customPrompt : generateState.prompt;
     if (!currentPrompt.trim()) return;
-
     setStatus('processing');
     setErrorMsg(null);
-
-    const baseImg = isRefining && generateState.results ? { data: generateState.results[generateState.resultIndex], mimeType: 'image/png' } : (generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined);
-
     try {
+      const baseImg = isRefining && generateState.results ? { data: generateState.results[generateState.resultIndex], mimeType: 'image/png' } : (generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined);
       const results = await generateImageFromPrompt(currentPrompt, isRefining ? 1 : generateCount, aspectRatio, baseImg);
       if (results && results.length > 0) {
         if (isRefining && generateState.results) {
@@ -291,32 +215,112 @@ export default function App() {
         } else {
           setGenerateState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
         }
-        
         setImageDescription(results[0].description || null);
-        
-        const newHistoryItems: HistoryItem[] = results.map((r, i) => ({
-          id: `${Date.now()}-gen-${i}`,
-          original: generateState.baseImage || r.base64,
-          processed: r.base64,
-          mode: 'Geração',
-          timestamp: Date.now(),
-          genModel: r.model,
-          description: r.description
-        }));
-        
-        setHistory(prev => [...newHistoryItems, ...prev].slice(0, 8));
         setStatus('success');
-      } else {
-        throw new Error("Falha na geração.");
       }
     } catch (err: any) {
-      setErrorMsg(err.message || "Erro ao gerar as imagens.");
       setStatus('error');
+      setErrorMsg(err.message || "Erro ao gerar arte.");
     }
   };
 
+  const handleMergeImageSelect = (side: 'A' | 'B', file: File, base64: string, mimeType: string) => {
+    if (side === 'A') {
+      setMergeState(prev => ({ ...prev, imageA: base64, mimeTypeA: mimeType }));
+    } else {
+      setMergeState(prev => ({ ...prev, imageB: base64, mimeTypeB: mimeType }));
+    }
+    setErrorMsg(null);
+  };
+
+  const handleGenerateImageSelect = (file: File, base64: string, mimeType: string) => {
+    setGenerateState(prev => ({ ...prev, baseImage: base64, baseMimeType: mimeType }));
+    setErrorMsg(null);
+  };
+
+  const handleProcess = async (mode: RestorationMode) => {
+    if (!imageState.originalPreview) return;
+    setStatus('processing');
+    setActiveMode(mode);
+    setErrorMsg(null);
+    try {
+      const toolPrompt = RESTORATION_OPTIONS.find(o => o.id === mode)?.prompt || '';
+      const userContext = customPrompt.trim() ? `ADDITIONAL USER INSTRUCTION: ${customPrompt}. ` : '';
+      const faceDesc = preserveFacialTraits ? "CRITICAL: Do NOT alter facial features." : "Enhance facial details.";
+      const finalPrompt = `${userContext}${toolPrompt}. Strength: ${restorationStrength}%. ${faceDesc}`;
+      const result = await processImage(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel);
+      setImageState(prev => ({ 
+        ...prev, 
+        processedPreview: result.base64,
+        history: [...prev.history, prev.originalPreview!],
+        future: [] 
+      }));
+      setImageDescription(result.description || null);
+      setHistory(prev => [{
+        id: Date.now().toString(),
+        original: imageState.originalPreview!,
+        processed: result.base64,
+        mode: mode === 'custom' ? 'Manual' : (RESTORATION_OPTIONS.find(o => o.id === mode)?.label || mode),
+        timestamp: Date.now(),
+        genModel: result.model,
+        description: result.description
+      }, ...prev].slice(0, 8));
+      setStatus('success');
+    } catch (err: any) {
+      setStatus('error');
+      if (err.message === "API Key") {
+        setErrorMsg("A chave de API não foi detectada. Configure-a para continuar.");
+        if (typeof window !== 'undefined' && (window as any).aistudio) (window as any).aistudio.openSelectKey();
+      } else {
+        setErrorMsg(err.message || "Ocorreu um erro inesperado.");
+      }
+    }
+  };
+
+  const handleContinueEditing = () => {
+    if (!imageState.processedPreview) return;
+    setImageState(prev => ({
+      ...prev,
+      originalPreview: prev.processedPreview,
+      processedPreview: null,
+      history: [...prev.history, prev.originalPreview!],
+      future: []
+    }));
+    setImageDescription(null);
+    setStatus('idle');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleUndo = () => {
+    if (imageState.history.length === 0) return;
+    const previousState = imageState.history[imageState.history.length - 1];
+    setImageState(prev => ({
+      ...prev,
+      originalPreview: previousState,
+      processedPreview: null,
+      future: [prev.originalPreview!, ...prev.future],
+      history: prev.history.slice(0, -1)
+    }));
+    setImageDescription(null);
+    setStatus('idle');
+  };
+
+  const handleRedo = () => {
+    if (imageState.future.length === 0) return;
+    const nextState = imageState.future[0];
+    setImageState(prev => ({
+      ...prev,
+      originalPreview: nextState,
+      processedPreview: null,
+      history: [...prev.history, prev.originalPreview!],
+      future: prev.future.slice(1)
+    }));
+    setImageDescription(null);
+    setStatus('idle');
+  };
+
   const handleFullReset = () => {
-    setImageState({ file: null, originalPreview: null, processedPreview: null, mimeType: '' });
+    setImageState({ file: null, originalPreview: null, processedPreview: null, mimeType: '', history: [], future: [] });
     setMergeState({ imageA: null, imageB: null, mimeTypeA: '', mimeTypeB: '', results: null, resultIndex: 0 });
     setGenerateState({ prompt: '', baseImage: null, baseMimeType: null, results: null, resultIndex: 0 });
     setStatus('idle');
@@ -329,7 +333,7 @@ export default function App() {
     if (!img) return;
     const link = document.createElement('a');
     link.href = img;
-    link.download = `restaurailma-${Date.now()}.png`;
+    link.download = `restaurai-${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -344,18 +348,20 @@ export default function App() {
             <div className="relative w-9 h-9 md:w-11 md:h-11 overflow-hidden rounded-2xl border border-white/20 bg-slate-800 flex items-center justify-center z-10 shadow-[0_0_15px_rgba(234,179,8,0.2)] transition-all group-hover:shadow-[0_0_30px_rgba(234,179,8,0.5)] group-hover:scale-105">
               <img src={LOGO_THUMBNAIL_URL} alt="Logo" className="w-full h-full object-cover" />
             </div>
-            <div className="relative text-[16px] xs:text-lg sm:text-xl md:text-2xl lg:text-3xl tracking-[0.25em] transition-all duration-300 flex items-center uppercase whitespace-nowrap z-10 select-none">
+            <div className="relative text-base xs:text-lg sm:text-xl md:text-2xl lg:text-3xl tracking-[0.25em] transition-all duration-300 flex items-center uppercase whitespace-nowrap z-10 select-none group-hover:scale-[1.02]">
                <span className={`transition-all duration-500 ${isLight ? 'text-slate-950 group-hover:text-indigo-700' : 'text-white group-hover:text-indigo-400'}`}>RESTAUR</span>
                <span className="text-indigo-600 font-bold transition-all duration-500">A</span>
                <span className={`font-bold transition-all duration-500 text-indigo-600 group-hover:text-yellow-500`}>I</span>
                <span className={`transition-all duration-500 ${isLight ? 'text-slate-950 group-hover:text-yellow-600' : 'text-white group-hover:text-yellow-400'}`}>LMA</span>
             </div>
           </button>
+          
           <nav className="hidden md:flex items-center bg-slate-800/20 p-1 rounded-2xl border border-slate-400/30 backdrop-blur-sm">
              <button onClick={() => setActiveTab('restore')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'restore' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><RefreshCw className="w-3 h-3" /> Restaurar</button>
              <button onClick={() => setActiveTab('merge')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'merge' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><Layers className="w-3 h-3" /> Mesclar</button>
              <button onClick={() => setActiveTab('generate')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'generate' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><ImageIcon className="w-3 h-3" /> Gerar</button>
           </nav>
+
           <div className="flex items-center gap-2">
             <button onClick={() => setShowAbout(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Sobre"><Info className="w-5 h-5" /></button>
             <button onClick={() => setShowHistory(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Histórico"><History className="w-5 h-5" /></button>
@@ -366,10 +372,12 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {errorMsg && (
-          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 text-xs font-bold flex items-center gap-3 animate-in slide-in-from-top duration-300">
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 text-xs font-bold flex items-center gap-3">
             <AlertCircle className="w-5 h-5 shrink-0" />
-            <p className="flex-1">{errorMsg}</p>
-            <button onClick={() => setErrorMsg(null)} className="p-1 hover:bg-red-500/20 rounded-md transition-colors"><X className="w-4 h-4" /></button>
+            <div className="flex-1">
+              <p>{errorMsg}</p>
+            </div>
+            <button onClick={() => setErrorMsg(null)} className="p-1 hover:bg-red-500/20 rounded-md"><X className="w-4 h-4" /></button>
           </div>
         )}
 
@@ -378,7 +386,7 @@ export default function App() {
             <div className="grid md:grid-cols-2 gap-12 items-center min-h-[60vh] py-10">
               <div className="space-y-6">
                 <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Dê vida nova às suas <span className="text-yellow-500 font-normal">fotos</span>.</h1>
-                <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Restauração inteligente para preservar memórias preciosas com perfeição total.</p>
+                <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Restauração inteligente preservando memórias preciosas com perfeição.</p>
                 <Uploader onImageSelect={handleImageSelect} />
               </div>
               <ChatAssistant messages={chatMessages} isLight={isLight} cardBg={cardBg} textMain={textMain} />
@@ -386,7 +394,7 @@ export default function App() {
           ) : (
             <div className="grid lg:grid-cols-3 gap-8 items-start">
               <div className="lg:col-span-2 space-y-6">
-                <div className={`${cardBg} rounded-3xl border p-2 min-h-[400px] flex items-center justify-center relative overflow-hidden transition-all`}>
+                <div className={`${cardBg} rounded-3xl border p-2 min-h-[400px] flex items-center justify-center relative overflow-hidden transition-all shadow-2xl`}>
                   {status === 'processing' && <LoaderOverlay />}
                   {imageState.processedPreview ? (
                     <ImageComparator 
@@ -398,24 +406,75 @@ export default function App() {
                     <img src={imageState.originalPreview} className="max-h-[70vh] rounded-xl shadow-xl" alt="Preview" />
                   )}
                 </div>
+
+                {/* Ações após processamento */}
+                {imageState.processedPreview && (
+                   <div className="flex gap-4 items-center justify-center animate-in fade-in slide-in-from-top-4 duration-300">
+                      <Button onClick={handleContinueEditing} className="h-12 px-8 uppercase text-xs tracking-elegant bg-yellow-500 hover:bg-yellow-400 text-slate-900 border-none" icon={ArrowRight}>Editar sobre este resultado</Button>
+                      <Button onClick={() => handleDownloadImage(imageState.processedPreview)} variant="secondary" className="h-12 px-8 uppercase text-xs tracking-elegant" icon={Download}>Baixar Agora</Button>
+                   </div>
+                )}
               </div>
+              
               <div className="space-y-6">
-                <div className={`${cardBg} rounded-3xl border p-6 shadow-xl`}>
-                  <h2 className={`text-sm flex items-center gap-2 mb-6 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-4 h-4 text-indigo-600" /> Ações Disponíveis</h2>
-                  <div className="grid gap-3">
+                {/* Painel de Contexto com Botão Integrado */}
+                <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
+                   <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-elegant text-indigo-600">
+                         <MessageSquare className="w-3.5 h-3.5" /> Contexto Personalizado
+                      </div>
+                      <div className="flex bg-slate-800/50 p-0.5 rounded-lg border border-slate-700">
+                        <button onClick={handleUndo} disabled={imageState.history.length === 0} className="p-1.5 hover:bg-slate-700 rounded-md text-yellow-400 disabled:opacity-20 transition-all" title="Desfazer"><Undo2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={handleRedo} disabled={imageState.future.length === 0} className="p-1.5 hover:bg-slate-700 rounded-md text-yellow-400 disabled:opacity-20 transition-all" title="Refazer"><Redo2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                   </div>
+                   
+                   <div className="relative group">
+                     <textarea 
+                       className={`w-full ${isLight ? 'bg-slate-50 text-slate-950 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium no-scrollbar`} 
+                       placeholder="Ex: 'Mantenha as roupas verdes' ou 'Não remova a cicatriz'..." 
+                       value={customPrompt} 
+                       onChange={e => setCustomPrompt(e.target.value)} 
+                     />
+                     <button 
+                       onClick={() => handleProcess('custom')}
+                       disabled={!customPrompt.trim() || status === 'processing'}
+                       className="absolute right-2 bottom-2 p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all shadow-lg disabled:opacity-50"
+                       title="Aplicar Ajuste Manual"
+                     >
+                       <Sparkles className="w-4 h-4" />
+                     </button>
+                   </div>
+                </div>
+
+                {/* Ferramentas de Restauração */}
+                <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
+                  <h2 className={`text-[10px] flex items-center gap-2 mb-6 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-3.5 h-3.5 text-indigo-600" /> Escolha o Método</h2>
+                  <div className="grid grid-cols-1 gap-2.5">
                     {RESTORATION_OPTIONS.map(opt => (
                       <ActionCard 
                         key={opt.id} 
                         option={opt} 
-                        active={activeMode === opt.id} 
-                        onClick={() => handleProcess(opt.id, !!imageState.processedPreview)} 
+                        active={activeMode === opt.id && status === 'success'} 
+                        onClick={() => handleProcess(opt.id)} 
                         isLight={isLight} 
                       />
                     ))}
                   </div>
                 </div>
-                <div className="flex flex-col gap-3">
-                  <Button onClick={handleFullReset} variant="ghost" className={`w-full h-14 uppercase tracking-elegant text-xs border ${isLight ? 'border-slate-300 text-slate-900' : 'border-slate-700/30 text-white'}`} icon={RotateCcw}>Limpar e Recomeçar</Button>
+
+                {/* Assistente Compacto na Sidebar */}
+                <div className={`${cardBg} rounded-3xl border p-4 shadow-xl`}>
+                   <div className="flex items-center gap-2 mb-3 text-[9px] uppercase font-bold text-slate-500">
+                      <Cpu className="w-3 h-3" /> Assistente
+                   </div>
+                   <div className={`p-3 rounded-2xl text-[10px] leading-relaxed mb-3 ${isLight ? 'bg-white text-slate-950 border border-slate-200' : 'bg-slate-950/50 text-slate-300 font-light'}`}>
+                      {status === 'processing' ? "Estou processando os pixels com cuidado..." : "Selecione uma ferramenta ou descreva o que deseja mudar na imagem."}
+                   </div>
+                   <div className="flex gap-2">
+                      <Button onClick={handleFullReset} variant="ghost" className="flex-1 h-10 uppercase text-[9px] tracking-elegant border border-slate-700/30" icon={RotateCcw}>Limpar</Button>
+                      <Button onClick={() => setShowAbout(true)} variant="secondary" className="h-10 px-3" icon={Info}></Button>
+                   </div>
                 </div>
               </div>
             </div>
@@ -495,10 +554,10 @@ export default function App() {
              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
           </div>
           <div className={`space-y-6 ${isLight ? 'text-slate-950' : 'text-slate-100'}`}>
-            <p className="text-sm italic font-light leading-relaxed tracking-soft">"Para conservar a história de quem nos trouxe atá aqui."</p>
+            <p className="text-sm italic font-light leading-relaxed tracking-soft">"Para conservar a história de quem nos trouxe até aqui."</p>
             <div className="flex flex-col items-center gap-1">
                <div className="h-[1px] w-12 bg-indigo-600/30 mb-2"></div>
-               <span className="text-xs font-bold uppercase tracking-elegant flex items-center gap-2">Para Ilma <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" /></span>
+               <span className="text-xs font-bold uppercase tracking-elegant flex items-center gap-2">Para Ilma S2 <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" /></span>
             </div>
           </div>
         </div>
@@ -506,7 +565,7 @@ export default function App() {
 
       <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="Histórico de Criações" isLight={isLight}>
         {history.length === 0 ? (
-          <div className="text-center py-12 opacity-40"><Clock className="w-12 h-12 mx-auto mb-4" /><p className="text-xs uppercase tracking-elegant">Nada por aqui ainda.</p></div>
+          <div className="text-center py-12 opacity-40"><Clock className="w-12 h-12 mx-auto mb-4" /><p className="text-xs uppercase tracking-elegant">Sem histórico recente.</p></div>
         ) : (
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 no-scrollbar">
             {history.map((item) => (
@@ -515,7 +574,7 @@ export default function App() {
                 <div className="flex-1 flex flex-col justify-between py-1 overflow-hidden">
                   <div>
                     <div className="text-[10px] uppercase font-bold text-indigo-600 mb-1 flex items-center justify-between">{item.mode} <span className="text-[8px] opacity-40">{new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
-                    <div className={`text-[9px] line-clamp-2 italic truncate ${isLight ? 'text-slate-950 font-bold' : 'text-slate-300'}`}>{item.description || 'Sem descrição.'}</div>
+                    <div className={`text-[9px] line-clamp-2 italic truncate ${isLight ? 'text-slate-950 font-bold' : 'text-slate-300'}`}>{item.description || 'Restauração de imagem.'}</div>
                   </div>
                   <div className="flex items-center justify-between mt-2">
                     <span className="text-[8px] opacity-40">{new Date(item.timestamp).toLocaleDateString()}</span>
@@ -544,8 +603,8 @@ export default function App() {
             <div className="flex items-center justify-between mb-4"><h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600">Motor de IA</h3></div>
             <div className="grid gap-2">
               {[
-                { id: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Flash', desc: 'Rápido e gratuito' },
-                { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro', desc: 'Máxima qualidade (projeto pago)' }
+                { id: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Flash', desc: 'Opção padrão (gratuita/incluída)' },
+                { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro', desc: 'Qualidade Premium (requer faturamento)' }
               ].map(m => (
                 <button key={m.id} onClick={() => setSettings(s => ({...s, preferredModel: m.id}))} className={`flex items-center justify-between p-4 rounded-2xl border text-left transition-all ${settings.preferredModel === m.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800/5 border-slate-400/20 text-slate-600 hover:border-indigo-400'}`}>
                   <div className="overflow-hidden"><div className="text-[11px] uppercase font-bold truncate">{m.name}</div><div className="text-[9px] opacity-60 truncate font-medium">{m.desc}</div></div>
@@ -638,7 +697,7 @@ function LoaderOverlay() {
   return (
     <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
       <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-6"></div>
-      <p className="text-xl font-bold uppercase tracking-elegant text-white animate-pulse">Tecendo sua Memória...</p>
+      <p className="text-xl font-bold uppercase tracking-elegant text-white animate-pulse">Refazendo Histórias...</p>
     </div>
   );
 }
@@ -679,13 +738,13 @@ function UploaderCompact({ label, current, onSelect, isLight }: any) {
 
 function ActionCard({ option, active, onClick, isLight }: any) {
   return (
-    <button onClick={onClick} className={`flex items-center p-4 rounded-2xl border text-left transition-all group w-full ${active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : isLight ? 'bg-white border-slate-300 text-slate-950 hover:border-indigo-600 shadow-sm' : 'bg-slate-800/50 border-slate-700 text-white hover:border-indigo-400'}`}>
-      <div className={`p-2 rounded-xl mr-4 transition-all ${active ? 'bg-white/20' : 'bg-indigo-600/10 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>
-        <option.icon className="w-5 h-5" />
+    <button onClick={onClick} className={`flex items-center p-3.5 rounded-2xl border text-left transition-all group w-full ${active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : isLight ? 'bg-white border-slate-300 text-slate-950 hover:border-indigo-600 shadow-sm' : 'bg-slate-800/50 border-slate-700 text-white hover:border-indigo-400'}`}>
+      <div className={`p-2 rounded-xl mr-3.5 transition-all ${active ? 'bg-white/20' : 'bg-indigo-600/10 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>
+        <option.icon className="w-4 h-4" />
       </div>
       <div className="flex-1">
-        <div className="text-xs uppercase font-bold tracking-soft">{option.label}</div>
-        <div className={`text-[9px] opacity-70 line-clamp-1 mt-0.5 ${isLight ? 'font-bold' : 'font-light'}`}>{option.description}</div>
+        <div className="text-[10px] uppercase font-bold tracking-soft">{option.label}</div>
+        <div className={`text-[8px] opacity-70 line-clamp-1 mt-0.5 ${isLight ? 'font-bold' : 'font-light'}`}>{option.description}</div>
       </div>
     </button>
   );

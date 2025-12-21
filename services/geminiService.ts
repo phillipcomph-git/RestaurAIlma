@@ -10,6 +10,16 @@ const cleanBase64 = (base64Str: string) => {
   return base64Str;
 };
 
+// Função auxiliar para inicializar a IA com segurança
+const getAIInstance = () => {
+  const apiKey = process.env.API_KEY || "";
+  // Se não houver chave, retornamos null ou lançamos um erro capturável pelo front
+  if (!apiKey) {
+    throw new Error("API Key");
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
 export const getAvailableModels = async (): Promise<string[]> => {
   return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
 };
@@ -20,8 +30,7 @@ export const processImage = async (
   promptInstruction: string,
   modelPreference: string = 'gemini-2.5-flash-image'
 ): Promise<ProcessResult> => {
-  // Criar nova instância para garantir o uso da chave mais recente do diálogo aistudio
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAIInstance();
   const modelId = modelPreference;
   
   const systemInstruction = `
@@ -51,7 +60,7 @@ export const processImage = async (
 
     const candidates = response.candidates;
     if (!candidates || candidates.length === 0) {
-      throw new Error("A IA não retornou resultados. Isso pode ocorrer devido a filtros de segurança ou falha no servidor.");
+      throw new Error("A IA não retornou resultados devido a filtros de segurança.");
     }
 
     const parts = candidates[0].content?.parts;
@@ -62,22 +71,14 @@ export const processImage = async (
       return {
         base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
         model: modelId,
-        description: textPart?.text?.trim() || "Restauração concluída com sucesso."
+        description: textPart?.text?.trim() || "Restauração concluída."
       };
     }
     
-    // Fallback caso a IA responda apenas com texto (ex: recusando a tarefa por política)
-    if (textPart?.text) {
-      throw new Error(`A IA não pôde processar a imagem: ${textPart.text}`);
-    }
-
-    throw new Error("A IA falhou em gerar os dados da imagem final.");
+    throw new Error("Falha ao gerar dados da imagem.");
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    if (error.message?.includes("Requested entity was not found")) {
-      throw new Error("Chave de API inválida ou projeto não encontrado. Por favor, re-selecione sua chave paga.");
-    }
-    throw error;
+    if (error.message === "API Key") throw error;
+    throw new Error(error.message || "Erro na comunicação com a API Gemini.");
   }
 };
 
@@ -87,54 +88,42 @@ export const generateImageFromPrompt = async (
   aspectRatio: string = "1:1",
   baseImage?: { data: string, mimeType: string }
 ): Promise<ProcessResult[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAIInstance();
   const modelId = 'gemini-2.5-flash-image';
 
-  const systemInstruction = `
-    You are a world-class artist and digital creator.
-    ${baseImage ? 'Modify the provided image based on the user prompt while preserving overall structure.' : 'Generate a high-quality, photorealistic image.'}
-    Style: cinematic, high detail.
-  `;
+  try {
+    const requests = Array.from({ length: count }).map((_, i) => {
+      const parts: any[] = [{ text: `Prompt: ${prompt}` }];
+      if (baseImage) parts.push({ inlineData: { mimeType: baseImage.mimeType, data: cleanBase64(baseImage.data) } });
 
-  const requests = Array.from({ length: count }).map((_, i) => {
-    const parts: any[] = [{ text: `Prompt: ${prompt}` }];
-    
-    if (baseImage) {
-      parts.push({
-        inlineData: {
-          mimeType: baseImage.mimeType,
-          data: cleanBase64(baseImage.data)
+      return ai.models.generateContent({
+        model: modelId,
+        contents: { parts },
+        config: {
+          systemInstruction: "Generate a photorealistic high-detail image based on the prompt.",
+          temperature: 0.7 + (i * 0.1),
+          imageConfig: { aspectRatio: aspectRatio as any }
         }
       });
-    }
-
-    return ai.models.generateContent({
-      model: modelId,
-      contents: { parts },
-      config: {
-        systemInstruction,
-        temperature: 0.7 + (i * 0.1),
-        imageConfig: { aspectRatio: aspectRatio as any }
-      }
     });
-  });
 
-  const responses = await Promise.all(requests);
-  
-  return responses.map(response => {
-    const parts = response.candidates?.[0]?.content?.parts;
-    const imagePart = parts?.find(p => p.inlineData);
-    const textPart = parts?.find(p => p.text);
-
-    if (imagePart?.inlineData?.data) {
-      return {
-        base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
-        model: modelId,
-        description: textPart?.text?.trim() || "Imagem gerada com sucesso."
-      };
-    }
-    throw new Error("Falha ao gerar uma das variantes de imagem.");
-  });
+    const responses = await Promise.all(requests);
+    return responses.map(response => {
+      const parts = response.candidates?.[0]?.content?.parts;
+      const imagePart = parts?.find(p => p.inlineData);
+      if (imagePart?.inlineData?.data) {
+        return {
+          base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
+          model: modelId,
+          description: "Arte gerada com sucesso."
+        };
+      }
+      throw new Error("Falha na geração.");
+    });
+  } catch (error: any) {
+    if (error.message === "API Key") throw error;
+    throw error;
+  }
 };
 
 export const mergeImages = async (
@@ -145,46 +134,43 @@ export const mergeImages = async (
   instruction: string,
   count: number = 1
 ): Promise<ProcessResult[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAIInstance();
   const modelId = 'gemini-2.5-flash-image';
 
-  const systemInstruction = `
-    Merge subjects from Photo A and Photo B into a single, highly realistic and photorealistic scene.
-    Keep facial identities identical. Ensure natural lighting and blending.
-  `;
-
-  const requests = Array.from({ length: count }).map((_, i) => {
-    return ai.models.generateContent({
-      model: modelId,
-      contents: {
-        parts: [
-          { inlineData: { mimeType: mimeA, data: cleanBase64(imageA) } },
-          { inlineData: { mimeType: mimeB, data: cleanBase64(imageB) } },
-          { text: `Instruction: ${instruction}` }
-        ]
-      },
-      config: {
-        systemInstruction,
-        temperature: 0.5 + (i * 0.1), 
-        imageConfig: { aspectRatio: "1:1" }
-      }
-    });
-  });
-
-  const responses = await Promise.all(requests);
-  
-  return responses.map(response => {
-    const parts = response.candidates?.[0]?.content?.parts;
-    const imagePart = parts?.find(p => p.inlineData);
-    const textPart = parts?.find(p => p.text);
-
-    if (imagePart?.inlineData?.data) {
-      return {
-        base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
+  try {
+    const requests = Array.from({ length: count }).map((_, i) => {
+      return ai.models.generateContent({
         model: modelId,
-        description: textPart?.text?.trim() || "Mesclagem concluída."
-      };
-    }
-    throw new Error("Falha ao mesclar as imagens.");
-  });
+        contents: {
+          parts: [
+            { inlineData: { mimeType: mimeA, data: cleanBase64(imageA) } },
+            { inlineData: { mimeType: mimeB, data: cleanBase64(imageB) } },
+            { text: `Instruction: ${instruction}` }
+          ]
+        },
+        config: {
+          systemInstruction: "Merge subjects from both photos into a single realistic scene.",
+          temperature: 0.5, 
+          imageConfig: { aspectRatio: "1:1" }
+        }
+      });
+    });
+
+    const responses = await Promise.all(requests);
+    return responses.map(response => {
+      const parts = response.candidates?.[0]?.content?.parts;
+      const imagePart = parts?.find(p => p.inlineData);
+      if (imagePart?.inlineData?.data) {
+        return {
+          base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
+          model: modelId,
+          description: "Mesclagem concluída."
+        };
+      }
+      throw new Error("Falha na mesclagem.");
+    });
+  } catch (error: any) {
+    if (error.message === "API Key") throw error;
+    throw error;
+  }
 };

@@ -3,13 +3,15 @@ import { GoogleGenAI } from "@google/genai";
 import { ProcessResult } from "../types";
 
 const cleanBase64 = (base64Str: string) => {
-  return base64Str.split(',')[1] || base64Str;
+  if (!base64Str) return "";
+  if (base64Str.includes(',')) {
+    return base64Str.split(',')[1];
+  }
+  return base64Str;
 };
 
-// Removed getAvailableModels as it used undocumented models.list() method.
-// Hardcoding recommended models instead to follow Gemini API SDK best practices.
 export const getAvailableModels = async (): Promise<string[]> => {
-  return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+  return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
 };
 
 export const processImage = async (
@@ -18,49 +20,65 @@ export const processImage = async (
   promptInstruction: string,
   modelPreference: string = 'gemini-2.5-flash-image'
 ): Promise<ProcessResult> => {
-  // Always use { apiKey: process.env.API_KEY } directly
+  // Criar nova instância para garantir o uso da chave mais recente do diálogo aistudio
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const modelId = modelPreference === 'auto' ? 'gemini-2.5-flash-image' : modelPreference;
+  const modelId = modelPreference;
   
-  // Define system instruction separately as per best practices
   const systemInstruction = `
     You are a world-class AI specialized in photographic restoration and enhancement.
     CRITICAL RULES:
     1. IDENTITY: Keep facial features and historical identity exactly as they are. No distortions.
     2. RESTORATION: Remove scratches, noise, cracks, and blur.
     3. COLOR: If the photo is old or B&W, provide realistic, natural colorization.
-    4. OUTPUT FORMAT: You MUST return exactly TWO parts: 
-       - An IMAGE part with the final processed result.
-       - A TEXT part with a very brief (1 sentence) description in Portuguese ONLY.
+    4. OUTPUT FORMAT: Return the processed image.
   `;
 
-  const response = await ai.models.generateContent({
-    model: modelId,
-    contents: {
-      parts: [
-        { inlineData: { mimeType, data: cleanBase64(base64Image) } },
-        { text: `Task: ${promptInstruction}` }
-      ]
-    },
-    config: {
-      systemInstruction,
-      temperature: 0.2,
-      imageConfig: { aspectRatio: "1:1" },
-    }
-  });
-
-  const parts = response.candidates?.[0]?.content?.parts;
-  const imagePart = parts?.find(p => p.inlineData);
-  const textPart = parts?.find(p => p.text);
-
-  if (imagePart?.inlineData?.data) {
-    return {
-      base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
+  try {
+    const response = await ai.models.generateContent({
       model: modelId,
-      description: textPart?.text?.trim() || undefined
-    };
+      contents: {
+        parts: [
+          { inlineData: { mimeType, data: cleanBase64(base64Image) } },
+          { text: `Task: ${promptInstruction}. Perform high-quality restoration.` }
+        ]
+      },
+      config: {
+        systemInstruction,
+        temperature: 0.1,
+        imageConfig: { aspectRatio: "1:1" },
+      }
+    });
+
+    const candidates = response.candidates;
+    if (!candidates || candidates.length === 0) {
+      throw new Error("A IA não retornou resultados. Isso pode ocorrer devido a filtros de segurança ou falha no servidor.");
+    }
+
+    const parts = candidates[0].content?.parts;
+    const imagePart = parts?.find(p => p.inlineData);
+    const textPart = parts?.find(p => p.text);
+
+    if (imagePart?.inlineData?.data) {
+      return {
+        base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
+        model: modelId,
+        description: textPart?.text?.trim() || "Restauração concluída com sucesso."
+      };
+    }
+    
+    // Fallback caso a IA responda apenas com texto (ex: recusando a tarefa por política)
+    if (textPart?.text) {
+      throw new Error(`A IA não pôde processar a imagem: ${textPart.text}`);
+    }
+
+    throw new Error("A IA falhou em gerar os dados da imagem final.");
+  } catch (error: any) {
+    console.error("Gemini API Error:", error);
+    if (error.message?.includes("Requested entity was not found")) {
+      throw new Error("Chave de API inválida ou projeto não encontrado. Por favor, re-selecione sua chave paga.");
+    }
+    throw error;
   }
-  throw new Error("Falha ao gerar imagem.");
 };
 
 export const generateImageFromPrompt = async (
@@ -69,19 +87,17 @@ export const generateImageFromPrompt = async (
   aspectRatio: string = "1:1",
   baseImage?: { data: string, mimeType: string }
 ): Promise<ProcessResult[]> => {
-  // Always use { apiKey: process.env.API_KEY } directly
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelId = 'gemini-2.5-flash-image';
 
   const systemInstruction = `
     You are a world-class artist and digital creator.
-    ${baseImage ? 'Modify the provided image based on the user prompt while preserving overall structure and identity.' : 'Generate a high-quality, photorealistic image based on the user\'s prompt.'}
-    Style: cinematic, high detail, balanced colors.
-    Output format: return an IMAGE part with the generated result and a TEXT part with a short description in Portuguese.
+    ${baseImage ? 'Modify the provided image based on the user prompt while preserving overall structure.' : 'Generate a high-quality, photorealistic image.'}
+    Style: cinematic, high detail.
   `;
 
   const requests = Array.from({ length: count }).map((_, i) => {
-    const parts: any[] = [{ text: `Prompt: ${prompt}\nVariation: ${i + 1}` }];
+    const parts: any[] = [{ text: `Prompt: ${prompt}` }];
     
     if (baseImage) {
       parts.push({
@@ -97,7 +113,7 @@ export const generateImageFromPrompt = async (
       contents: { parts },
       config: {
         systemInstruction,
-        temperature: 0.7 + (i * 0.05),
+        temperature: 0.7 + (i * 0.1),
         imageConfig: { aspectRatio: aspectRatio as any }
       }
     });
@@ -114,10 +130,10 @@ export const generateImageFromPrompt = async (
       return {
         base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
         model: modelId,
-        description: textPart?.text?.trim() || undefined
+        description: textPart?.text?.trim() || "Imagem gerada com sucesso."
       };
     }
-    throw new Error("Falha ao gerar uma das imagens.");
+    throw new Error("Falha ao gerar uma das variantes de imagem.");
   });
 };
 
@@ -129,22 +145,12 @@ export const mergeImages = async (
   instruction: string,
   count: number = 1
 ): Promise<ProcessResult[]> => {
-  // Always use { apiKey: process.env.API_KEY } directly
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelId = 'gemini-2.5-flash-image';
 
   const systemInstruction = `
-    You are a master of photorealistic image synthesis and seamless composition.
-    Your goal is to CREATE A UNIFIED MASTERPIECE that blends subjects from Photo A and Photo B realistically.
-    
-    CRITICAL REALISM GUIDELINES:
-    1. NO COLLAGE: Do not simply overlay images. Synthesize a brand new scene where both subjects coexist naturally.
-    2. COHERENT LIGHTING: Analyze the light sources in both photos. Adjust shadows, highlights, and skin tones so they match the synthesized environment perfectly.
-    3. INTERACTION & DEPTH: Place subjects in a shared 3D space. Add realistic contact shadows and depth-of-field effects where appropriate.
-    4. ANATOMICAL INTEGRITY: Ensure the perspective and scale are correct for all subjects.
-    5. IDENTITY PRESERVATION: Facial features must remain 100% faithful to the originals.
-    
-    Output format: return an IMAGE part with the merged result and a TEXT part describing the scene in Portuguese.
+    Merge subjects from Photo A and Photo B into a single, highly realistic and photorealistic scene.
+    Keep facial identities identical. Ensure natural lighting and blending.
   `;
 
   const requests = Array.from({ length: count }).map((_, i) => {
@@ -154,12 +160,12 @@ export const mergeImages = async (
         parts: [
           { inlineData: { mimeType: mimeA, data: cleanBase64(imageA) } },
           { inlineData: { mimeType: mimeB, data: cleanBase64(imageB) } },
-          { text: `Instrução do usuário: ${instruction}\nVariation hint: ${i + 1}` }
+          { text: `Instruction: ${instruction}` }
         ]
       },
       config: {
         systemInstruction,
-        temperature: 0.4 + (i * 0.1), 
+        temperature: 0.5 + (i * 0.1), 
         imageConfig: { aspectRatio: "1:1" }
       }
     });
@@ -176,9 +182,9 @@ export const mergeImages = async (
       return {
         base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
         model: modelId,
-        description: textPart?.text?.trim() || undefined
+        description: textPart?.text?.trim() || "Mesclagem concluída."
       };
     }
-    throw new Error("Falha ao mesclar uma das variantes.");
+    throw new Error("Falha ao mesclar as imagens.");
   });
 };

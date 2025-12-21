@@ -66,7 +66,7 @@ const ABOUT_CAROUSEL_IMAGES = [
   "https://drive.google.com/thumbnail?id=1qvU6V2KpAl60XSSCicKkmZI90WHNdX8Q&sz=w800",
   "https://drive.google.com/thumbnail?id=16-788ZCK7vsexkBpYYwy7LEYG1QKrsi7&sz=w800",
   "https://drive.google.com/thumbnail?id=1yKylSvOGMiF0ANi6JKntad68ewqWMCsZ&sz=w800",
-  "https://drive.google.com/thumbnail?id=1f-EBhQxCNG05lufyKkoM0TKMBfV5zgpH&sz=w800",
+  "https://drive.google.com/thumbnail?id=1f-EBhQxCNG05lufyKkoM0TKMBV5zgpH&sz=w800",
   "https://drive.google.com/thumbnail?id=1ZxIgVQLxxnAoMYEZ8oZ3Pq7Cw50j1oeV&sz=w800",
   "https://drive.google.com/thumbnail?id=1CylddNKFy5f2GzC83mma3U6RyIZ88VCc&sz=w800",
   "https://drive.google.com/thumbnail?id=1siGvNVD186qQmut3tWTXbQloKrUaickB&sz=w800"
@@ -77,9 +77,8 @@ const safeStorage = {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (e) {
-      console.warn("Storage quota exceeded. Clearing older items.", e);
       if (key === 'restaurai_history') {
-        const partial = Array.isArray(value) ? value.slice(0, 5) : [];
+        const partial = Array.isArray(value) ? value.slice(0, 3) : [];
         try { localStorage.setItem(key, JSON.stringify(partial)); } catch (err) { localStorage.removeItem(key); }
       }
     }
@@ -135,7 +134,7 @@ export default function App() {
   const textMain = isLight ? 'text-slate-950 font-extralight' : 'text-white font-extralight';
   const textSub = isLight ? 'text-slate-700 font-normal' : 'text-slate-400 font-light';
 
-  // Define colors for the utility buttons (Settings, History, About)
+  // Ícones de utilitários em Amarelo no modo Dark, Índigo no modo Light
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-500 hover:text-yellow-400';
 
   useEffect(() => {
@@ -147,22 +146,6 @@ export default function App() {
   useEffect(() => {
     safeStorage.save('restaurai_history', history);
   }, [history]);
-
-  const checkApiKeyRequirement = async () => {
-    // Proactive check for API key in browser environments using the required bridge
-    try {
-      // @ts-ignore
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      if (!hasKey || !process.env.API_KEY) {
-        // @ts-ignore
-        await window.aistudio.openSelectKey();
-        return true; 
-      }
-    } catch (e) {
-      console.error("Erro ao verificar chave de API:", e);
-    }
-    return true;
-  };
 
   const navigateResults = useCallback((direction: 'next' | 'prev') => {
     if (activeTab === 'merge' && mergeState.results && mergeState.results.length > 0) {
@@ -227,7 +210,6 @@ export default function App() {
     const baseImage = useProcessedAsBase ? imageState.processedPreview : imageState.originalPreview;
     if (!baseImage) return;
 
-    await checkApiKeyRequirement();
     setStatus('processing');
     setActiveMode(mode);
     setErrorMsg(null);
@@ -249,14 +231,10 @@ export default function App() {
         timestamp: Date.now(),
         genModel: result.model,
         description: result.description
-      }, ...prev].slice(0, 10));
+      }, ...prev].slice(0, 8));
 
       setStatus('success');
     } catch (err: any) {
-      if (err.message?.includes("API Key") || err.message?.includes("entity was not found")) {
-        // @ts-ignore
-        await window.aistudio.openSelectKey();
-      }
       setErrorMsg(err.message || "Ocorreu um erro inesperado ao analisar a imagem.");
       setStatus('error');
     }
@@ -265,7 +243,6 @@ export default function App() {
   const handleMergeAction = async () => {
     if (!mergeState.imageA || !mergeState.imageB || !customPrompt.trim()) return;
     
-    await checkApiKeyRequirement();
     setStatus('processing');
     setErrorMsg(null);
     try {
@@ -284,16 +261,12 @@ export default function App() {
           description: r.description
         }));
         
-        setHistory(prev => [...newHistoryItems, ...prev].slice(0, 10));
+        setHistory(prev => [...newHistoryItems, ...prev].slice(0, 8));
         setStatus('success');
       } else {
-        throw new Error("Nenhum resultado retornado da mesclagem.");
+        throw new Error("Nenhum resultado retornado.");
       }
     } catch (err: any) {
-      if (err.message?.includes("API Key")) {
-        // @ts-ignore
-        await window.aistudio.openSelectKey();
-      }
       setErrorMsg(err.message || "Erro ao mesclar as imagens.");
       setStatus('error');
     }
@@ -303,7 +276,6 @@ export default function App() {
     const currentPrompt = isRefining ? customPrompt : generateState.prompt;
     if (!currentPrompt.trim()) return;
 
-    await checkApiKeyRequirement();
     setStatus('processing');
     setErrorMsg(null);
 
@@ -332,16 +304,12 @@ export default function App() {
           description: r.description
         }));
         
-        setHistory(prev => [...newHistoryItems, ...prev].slice(0, 10));
+        setHistory(prev => [...newHistoryItems, ...prev].slice(0, 8));
         setStatus('success');
       } else {
-        throw new Error("Nenhum resultado retornado da geração.");
+        throw new Error("Falha na geração.");
       }
     } catch (err: any) {
-      if (err.message?.includes("API Key")) {
-        // @ts-ignore
-        await window.aistudio.openSelectKey();
-      }
       setErrorMsg(err.message || "Erro ao gerar as imagens.");
       setStatus('error');
     }
@@ -577,7 +545,7 @@ export default function App() {
             <div className="grid gap-2">
               {[
                 { id: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Flash', desc: 'Rápido e gratuito' },
-                { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro', desc: 'Máxima qualidade (requer chave paga)' }
+                { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro', desc: 'Máxima qualidade (projeto pago)' }
               ].map(m => (
                 <button key={m.id} onClick={() => setSettings(s => ({...s, preferredModel: m.id}))} className={`flex items-center justify-between p-4 rounded-2xl border text-left transition-all ${settings.preferredModel === m.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800/5 border-slate-400/20 text-slate-600 hover:border-indigo-400'}`}>
                   <div className="overflow-hidden"><div className="text-[11px] uppercase font-bold truncate">{m.name}</div><div className="text-[9px] opacity-60 truncate font-medium">{m.desc}</div></div>
@@ -701,7 +669,7 @@ function UploaderCompact({ label, current, onSelect, isLight }: any) {
       {current ? ( <img src={current} className="w-full h-full object-cover rounded-xl transition-transform group-hover:scale-105" alt="Preview" /> ) : (
         <div className="flex flex-col items-center p-2 text-center">
           <ImageIcon className="w-5 h-5 text-indigo-600 mb-1" />
-          <span className={`text-[9px] font-bold uppercase tracking-soft ${isLight ? 'text-slate-950' : 'text-slate-500'}`}>{label}</span>
+          <span className={`text-[10px] font-bold uppercase tracking-soft ${isLight ? 'text-slate-950' : 'text-slate-500'}`}>{label}</span>
         </div>
       )}
       <input type="file" className="hidden" onChange={(e:any) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => onSelect(f, r.result as string, f.type); r.readAsDataURL(f); } }} />

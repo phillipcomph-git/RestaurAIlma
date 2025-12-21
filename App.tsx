@@ -388,7 +388,6 @@ export default function App() {
     setStatus('processing');
     setErrorMsg(null);
     try {
-      // Fix: Change mergeTypeB to mergeState.mimeTypeB
       const results = await mergeImages(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt, mergeCount);
       setMergeState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
       setImageDescription(results[0].description || null);
@@ -637,7 +636,7 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-start md:items-center">
                 <div className="space-y-6 md:space-y-8">
                   <h1 className={`text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extralight tracking-elegant leading-[1.1] uppercase ${textMain}`}>Crie <span className="text-yellow-500 font-bold">novas</span> realidades.</h1>
-                  <p className={`${textSub} font-light text-[11px] sm:text-xs md:text-sm tracking-soft max-w-sm`}>Descreva qualquer cena ou suba uma imagem para ser transformada pela nossa IA.</p>
+                  <p className={`${textSub} font-light text-[11px] sm:text-xs md:text-sm tracking-soft max-w-sm`}>Descreva qualquer cena or suba uma imagem para ser transformada pela nossa IA.</p>
                   
                   <div className="grid grid-cols-1 gap-4 md:gap-6 lg:max-w-md">
                     <div className="space-y-3">
@@ -894,12 +893,12 @@ function AboutModal({ onClose, isLight, textMain }: any) {
   }, [images.length]);
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-      <div className={`${isLight ? 'bg-white shadow-[0_0_40px_rgba(0,0,0,0.1)]' : 'bg-slate-900 shadow-[0_0_50px_rgba(0,0,0,0.5)]'} rounded-2xl md:rounded-[3rem] w-full max-w-6xl p-6 md:p-10 lg:p-14 border ${isLight ? 'border-slate-300' : 'border-slate-800'} relative overflow-hidden max-h-[92vh] overflow-y-auto`}>
+      <div className={`${isLight ? 'bg-white shadow-[0_0_40px_rgba(0,0,0,0.1)]' : 'bg-slate-900 shadow-[0_0_50px_rgba(0,0,0,0.5)]'} rounded-2xl md:rounded-[3rem] w-full max-w-4xl p-6 md:p-8 border ${isLight ? 'border-slate-300' : 'border-slate-800'} relative overflow-hidden max-h-[92vh] overflow-y-auto`}>
         <button onClick={onClose} className={`absolute top-4 right-4 md:top-6 md:right-6 p-2 ${isLight ? 'text-slate-700 hover:bg-slate-200' : 'text-slate-400 hover:bg-slate-800'} z-10 rounded-full transition-colors`}><X className="w-6 h-6 md:w-8 md:h-8" /></button>
-        <div className="flex flex-col md:flex-row gap-8 md:gap-12 lg:gap-16 items-center justify-center py-4">
-          <div className="relative w-48 h-48 md:w-72 md:h-72 lg:w-96 xl:w-[450px] lg:h-96 xl:h-[450px] group shrink-0">
-             <div className="absolute -inset-4 bg-indigo-600/10 rounded-2xl md:rounded-3xl lg:rounded-[4rem] blur-2xl transition-all duration-700 group-hover:blur-3xl"></div>
-             <div className={`relative w-full h-full ${isLight ? 'bg-slate-100' : 'bg-slate-800'} rounded-2xl md:rounded-3xl lg:rounded-[4rem] overflow-hidden border ${isLight ? 'border-slate-200 shadow-inner' : 'border-white/10'} shadow-2xl flex items-center justify-center`}>
+        <div className="flex flex-col md:flex-row gap-8 md:gap-10 items-center justify-center py-4">
+          <div className="relative w-40 h-40 md:w-64 md:h-64 lg:w-80 group shrink-0">
+             <div className="absolute -inset-3 bg-indigo-600/10 rounded-2xl md:rounded-3xl blur-2xl transition-all duration-700 group-hover:blur-3xl"></div>
+             <div className={`relative w-full h-full ${isLight ? 'bg-slate-100' : 'bg-slate-800'} rounded-2xl md:rounded-3xl overflow-hidden border ${isLight ? 'border-slate-200 shadow-inner' : 'border-white/10'} shadow-xl flex items-center justify-center`}>
                 {images.map((src, idx) => ( 
                   <img 
                     key={idx} 
@@ -910,18 +909,18 @@ function AboutModal({ onClose, isLight, textMain }: any) {
                 ))}
              </div>
           </div>
-          <div className="flex-1 flex flex-col justify-center space-y-8 md:space-y-12 text-center md:text-left max-w-2xl px-2">
-             <div className="space-y-6 md:space-y-8">
-                <p className={`${isLight ? 'text-slate-950' : 'text-white'} text-xl md:text-2xl lg:text-3xl xl:text-4xl 2xl:text-5xl font-thin leading-snug opacity-95 tracking-tight md:tracking-soft`}>
+          <div className="flex-1 flex flex-col justify-center space-y-6 md:space-y-8 text-center md:text-left max-w-xl px-2">
+             <div className="space-y-4 md:space-y-6">
+                <p className={`${isLight ? 'text-slate-950' : 'text-white'} text-lg md:text-xl lg:text-2xl xl:text-3xl font-thin leading-snug opacity-95 tracking-tight md:tracking-soft`}>
                   "O aplicativo pra ajudar a recordar a memória de quem nos trouxe até aqui."
                 </p>
-                <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-indigo-600 to-transparent opacity-50"></div>
+                <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-indigo-600 to-transparent opacity-40"></div>
              </div>
              
              <div className="flex items-center justify-center md:justify-start gap-4">
-                <span className="text-yellow-500 font-extralight text-2xl md:text-4xl lg:text-5xl xl:text-6xl tracking-elegant uppercase inline-flex items-center gap-4 lg:gap-8 whitespace-nowrap">
+                <span className="text-yellow-500 font-extralight text-xl md:text-3xl lg:text-4xl xl:text-5xl tracking-elegant uppercase inline-flex items-center gap-4 lg:gap-6 whitespace-nowrap">
                   Para <span className="font-light">ilma</span> 
-                  <Heart className="w-8 h-8 md:w-12 md:h-12 lg:w-16 lg:h-16 fill-current text-indigo-600 animate-pulse" />
+                  <Heart className="w-10 h-10 lg:w-12 lg:h-12 fill-current text-indigo-600 animate-pulse" />
                 </span>
              </div>
           </div>
@@ -960,7 +959,7 @@ function SettingsModal({ settings, onUpdateSettings, onClose, onKeySelect, isLig
             <div className="grid grid-cols-2 gap-3 md:gap-4">
               <button 
                 onClick={() => onUpdateSettings({ ...settings, theme: 'dark' })}
-                className={`flex flex-col items-center gap-2 p-3 md:p-4 rounded-xl md:rounded-2xl border transition-all ${settings.theme === 'dark' ? 'border-yellow-500 bg-yellow-400/10 text-yellow-500 shadow-md md:shadow-lg shadow-yellow-400/5' : isLight ? 'border-slate-300 bg-slate-100 text-slate-500 hover:bg-slate-200' : 'border-slate-700 bg-slate-800/50 text-slate-500'}`}
+                className={`flex flex-col items-center gap-2 p-3 md:p-4 rounded-xl md:rounded-2xl border transition-all ${settings.theme === 'dark' ? 'border-yellow-500 bg-yellow-400/10 text-yellow-400 shadow-md md:shadow-lg shadow-yellow-400/5' : isLight ? 'border-slate-300 bg-slate-100 text-slate-500 hover:bg-slate-200' : 'border-slate-700 bg-slate-800/50 text-slate-500'}`}
               >
                 <Moon className="w-4 h-4 md:w-5 md:h-5" />
                 <span className="text-[9px] md:text-[10px] uppercase tracking-tight font-light">Escuro</span>

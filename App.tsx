@@ -53,10 +53,10 @@ const RESTORATION_OPTIONS: ActionOption[] = [
   },
   {
     id: 'upscale',
-    label: 'Upscale (4K)',
+    label: 'Aumentar Nitidez',
     icon: Maximize2,
-    description: 'Aumenta a resolução drasticamente.',
-    prompt: 'Super-resolution upscale: Increase image resolution significantly, maintaining sharp details.'
+    description: 'Melhora a definição dos detalhes.',
+    prompt: 'Sharpen details and increase clarity significantly.'
   },
   {
     id: 'remove-bg',
@@ -109,6 +109,7 @@ export default function App() {
   const [mergeState, setMergeState] = useState<MergeState>({
     imageA: null, imageB: null, mimeTypeA: '', mimeTypeB: '', results: null, resultIndex: 0
   });
+  const [mergeCount, setMergeCount] = useState(1);
   const [status, setStatus] = useState<ProcessingStatus>('idle');
   const [processingProgress, setProcessingProgress] = useState<string>('');
   const [activeMode, setActiveMode] = useState<RestorationMode | null>(null);
@@ -122,116 +123,33 @@ export default function App() {
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
-  const [chatMessages] = useState<{role: 'user' | 'assistant', text: string}[]>([
-    { role: 'assistant', text: 'Oi! Sou seu assistente. Posso ajudar a guiar sua restauração.' }
-  ]);
-
   const [settings, setSettings] = useState<AppSettings>(() => safeStorage.load('restaurai_settings', { language: 'pt', theme: 'dark', preferredModel: 'gemini-2.5-flash-image' }));
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(() => safeStorage.load('restaurai_history', []));
 
+  useEffect(() => { safeStorage.save('restaurai_history', history); }, [history]);
+  useEffect(() => { safeStorage.save('restaurai_settings', settings); }, [settings]);
+
   const isLight = settings.theme === 'light';
-  const cardBg = isLight ? 'bg-slate-50 shadow-lg border-slate-200' : 'bg-slate-900/80 shadow-2xl border-slate-800';
-  const textMain = isLight ? 'text-slate-950 font-extralight' : 'text-white font-extralight';
-  const textSub = isLight ? 'text-slate-700 font-normal' : 'text-slate-400 font-light';
+  const cardBg = isLight ? 'bg-white shadow-[0_8px_30px_rgb(0,0,0,0.06)] border-slate-200' : 'bg-slate-900/80 shadow-2xl border-slate-800';
+  const textMain = isLight ? 'text-slate-900 font-extralight' : 'text-white font-extralight';
+  const textSub = isLight ? 'text-slate-600 font-medium' : 'text-slate-400 font-light';
 
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
   const handleApiError = (err: any) => {
     setStatus('error');
     setProcessingProgress('');
-    setErrorMsg(err.message || "Ocorreu um erro inesperado no processamento.");
+    setErrorMsg(err.message || "Erro de conexão com a API.");
   };
-
-  const navigateResults = useCallback((direction: 'next' | 'prev') => {
-    if (activeTab === 'merge' && mergeState.results && mergeState.results.length > 0) {
-      const len = mergeState.results.length;
-      const nextIdx = direction === 'next' ? (mergeState.resultIndex + 1) % len : (mergeState.resultIndex - 1 + len) % len;
-      setMergeState(prev => ({ ...prev, resultIndex: nextIdx }));
-      if (fullScreenImage) setFullScreenImage(mergeState.results[nextIdx]);
-    } else if (activeTab === 'generate' && generateState.results && generateState.results.length > 0) {
-      const len = generateState.results.length;
-      const nextIdx = direction === 'next' ? (generateState.resultIndex + 1) % len : (generateState.resultIndex - 1 + len) % len;
-      setGenerateState(prev => ({ ...prev, resultIndex: nextIdx }));
-      if (fullScreenImage) setFullScreenImage(generateState.results[nextIdx]);
-    }
-  }, [activeTab, mergeState.results, mergeState.resultIndex, generateState.results, generateState.resultIndex, fullScreenImage]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') navigateResults('next');
-      if (e.key === 'ArrowLeft') navigateResults('prev');
-      if (e.key === 'Escape') {
-        setFullScreenImage(null);
-        setShowSettings(false);
-        setShowHistory(false);
-        setShowAbout(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateResults]);
 
   const handleImageSelect = (file: File, base64: string, mimeType: string) => {
     setImageState({ file, originalPreview: base64, processedPreview: null, mimeType, history: [], future: [] });
     setStatus('idle');
     setErrorMsg(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleMergeImageSelect = (side: 'A' | 'B', file: File, base64: string, mimeType: string) => {
-    if (side === 'A') {
-      setMergeState(prev => ({ ...prev, imageA: base64, mimeTypeA: mimeType }));
-    } else {
-      setMergeState(prev => ({ ...prev, imageB: base64, mimeTypeB: mimeType }));
-    }
-    setErrorMsg(null);
-    setStatus('idle');
-  };
-
-  const handleGenerateImageSelect = (file: File, base64: string, mimeType: string) => {
-    setGenerateState(prev => ({ ...prev, baseImage: base64, baseMimeType: mimeType }));
-    setErrorMsg(null);
-    setStatus('idle');
-  };
-
-  const handleMergeAction = async () => {
-    if (!mergeState.imageA || !mergeState.imageB || !customPrompt.trim()) return;
-    setStatus('processing');
-    setErrorMsg(null);
-    try {
-      const results = await mergeImages(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt);
-      setMergeState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
-      setStatus('success');
-    } catch (err: any) {
-      handleApiError(err);
-    }
-  };
-
-  const handleGenerate = async (isRefining = false) => {
-    const currentPrompt = isRefining ? customPrompt : generateState.prompt;
-    if (!currentPrompt.trim()) return;
-    setStatus('processing');
-    setErrorMsg(null);
-    
-    const count = isRefining ? 1 : generateCount;
-    try {
-      const baseImg = isRefining && generateState.results ? { data: generateState.results[generateState.resultIndex], mimeType: 'image/png' } : (generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined);
-      const results = await generateImageFromPrompt(currentPrompt, count, aspectRatio, baseImg);
-      
-      if (isRefining && generateState.results) {
-        const newResults = [...generateState.results];
-        newResults[generateState.resultIndex] = results[0].base64;
-        setGenerateState(prev => ({ ...prev, results: newResults }));
-      } else {
-        setGenerateState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
-      }
-      setStatus('success');
-    } catch (err: any) {
-      handleApiError(err);
-    }
   };
 
   const handleProcess = async (mode: RestorationMode) => {
@@ -273,11 +191,12 @@ export default function App() {
       ...prev,
       originalPreview: prev.processedPreview,
       processedPreview: null,
-      history: [...prev.history], // Já foi adicionado no handleProcess
+      history: [...prev.history], 
       future: []
     }));
     setStatus('idle');
     setActiveMode(null);
+    setCustomPrompt('');
   };
 
   const handleUndo = () => {
@@ -326,23 +245,53 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  const handleGenerate = async () => {
+    if (!generateState.prompt.trim()) return;
+    setStatus('processing');
+    setErrorMsg(null);
+    try {
+      const baseImg = generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined;
+      const results = await generateImageFromPrompt(generateState.prompt, generateCount, aspectRatio, baseImg);
+      setGenerateState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
+      setStatus('success');
+    } catch (err: any) {
+      handleApiError(err);
+    }
+  };
+
+  const handleMergeAction = async () => {
+    if (!mergeState.imageA || !mergeState.imageB || !customPrompt.trim()) return;
+    setStatus('processing');
+    setErrorMsg(null);
+    try {
+      const results = await mergeImages(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt, mergeCount);
+      setMergeState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
+      setStatus('success');
+    } catch (err: any) {
+      handleApiError(err);
+    }
+  };
+
   return (
-    <div className={`min-h-screen ${isLight ? 'bg-slate-300 text-slate-950' : 'bg-slate-950 text-white'} transition-colors duration-300 pb-24 md:pb-20`}>
-      <header className={`border-b ${isLight ? 'border-slate-200 bg-slate-50/95' : 'border-slate-800 bg-slate-900/50'} backdrop-blur-md sticky top-0 z-50 h-16 md:h-20 shadow-sm`}>
+    <div className={`min-h-screen ${isLight ? 'bg-slate-200 text-slate-950' : 'bg-slate-950 text-white'} transition-colors duration-300 pb-24 md:pb-20`}>
+      <header className={`border-b ${isLight ? 'border-slate-300 bg-white/95 shadow-sm' : 'border-slate-800 bg-slate-900/50'} backdrop-blur-md sticky top-0 z-50 h-16 md:h-20`}>
         <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
-          <button className="flex items-center gap-2 md:gap-5 cursor-pointer group outline-none relative" onClick={handleFullReset}>
-            <div className="relative w-9 h-9 md:w-11 md:h-11 overflow-hidden rounded-2xl border border-white/20 bg-slate-800 flex items-center justify-center z-10">
+          <button className="flex items-center gap-2 md:gap-5 cursor-pointer group outline-none relative py-2 px-4" onClick={handleFullReset}>
+            {/* Glow Effect on Hover - Reduced Size */}
+            <div className="absolute inset-0 bg-yellow-400/0 blur-[20px] rounded-full z-0 pointer-events-none group-hover:bg-yellow-400/15 transition-all duration-500 scale-110" />
+            
+            <div className="relative w-9 h-9 md:w-11 md:h-11 overflow-hidden rounded-2xl border border-white/20 bg-slate-800 flex items-center justify-center z-10 shadow-lg">
               <img src={LOGO_THUMBNAIL_URL} alt="Logo" className="w-full h-full object-cover" />
             </div>
-            <div className="relative text-base xs:text-lg sm:text-xl md:text-2xl lg:text-3xl tracking-[0.25em] transition-all duration-300 flex items-center uppercase whitespace-nowrap z-10 select-none group-hover:scale-[1.02]">
-               <span className={`transition-all duration-500 ${isLight ? 'text-slate-950 group-hover:text-indigo-700' : 'text-white group-hover:text-indigo-400'}`}>RESTAUR</span>
+            <div className="relative text-base xs:text-lg sm:text-xl md:text-2xl lg:text-3xl tracking-[0.25em] transition-all duration-300 flex items-center uppercase whitespace-nowrap z-10 select-none group-hover:scale-[1.01]">
+               <span className={`transition-all duration-500 font-extralight ${isLight ? 'text-slate-950 group-hover:text-indigo-700' : 'text-white group-hover:text-indigo-400'}`}>RESTAUR</span>
                <span className="text-indigo-600 font-bold transition-all duration-500">A</span>
                <span className={`font-bold transition-all duration-500 text-indigo-600 group-hover:text-yellow-500`}>I</span>
-               <span className={`transition-all duration-500 ${isLight ? 'text-slate-950 group-hover:text-yellow-600' : 'text-white group-hover:text-yellow-400'}`}>LMA</span>
+               <span className={`transition-all duration-500 font-extralight ${isLight ? 'text-slate-950 group-hover:text-yellow-600' : 'text-white group-hover:text-yellow-400'}`}>LMA</span>
             </div>
           </button>
           
-          <nav className="hidden md:flex items-center bg-slate-800/20 p-1 rounded-2xl border border-slate-400/30 backdrop-blur-sm">
+          <nav className={`hidden md:flex items-center p-1 rounded-2xl border backdrop-blur-sm ${isLight ? 'bg-slate-300/50 border-slate-400' : 'bg-slate-800/20 border-slate-400/30'}`}>
              <button onClick={() => setActiveTab('restore')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'restore' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><RefreshCw className="w-3 h-3" /> Restaurar</button>
              <button onClick={() => setActiveTab('merge')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'merge' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><Layers className="w-3 h-3" /> Mesclar</button>
              <button onClick={() => setActiveTab('generate')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'generate' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><ImageIcon className="w-3 h-3" /> Gerar</button>
@@ -376,11 +325,11 @@ export default function App() {
           !imageState.originalPreview ? (
             <div className="grid md:grid-cols-2 gap-12 items-center min-h-[60vh] py-10">
               <div className="space-y-6">
-                <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Dê vida nova às suas <span className="text-yellow-500 font-normal">fotos</span>.</h1>
+                <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Dê vida nova às suas <span className="text-yellow-500 font-bold">fotos</span>.</h1>
                 <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Restauração inteligente preservando memórias preciosas com perfeição.</p>
                 <Uploader onImageSelect={handleImageSelect} />
               </div>
-              <ChatAssistant messages={chatMessages} isLight={isLight} cardBg={cardBg} textMain={textMain} />
+              <ChatAssistant cardBg={cardBg} isLight={isLight} />
             </div>
           ) : (
             <div className="grid lg:grid-cols-3 gap-8 items-start">
@@ -426,42 +375,20 @@ export default function App() {
                       <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-elegant text-indigo-600">
                          <MessageSquare className="w-3.5 h-3.5" /> Ajuste Manual
                       </div>
-                      <div className="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700 space-x-1">
-                        <button 
-                          onClick={handleUndo} 
-                          disabled={imageState.history.length === 0} 
-                          className="p-2 hover:bg-slate-700 rounded-lg text-yellow-400 disabled:opacity-20 disabled:text-slate-500 transition-all flex items-center gap-1 group" 
-                          title="Desfazer"
-                        >
-                          <Undo2 className="w-4 h-4 group-active:scale-90 transition-transform" />
-                          <span className="text-[8px] font-bold uppercase hidden sm:inline">Desfazer</span>
-                        </button>
-                        <button 
-                          onClick={handleRedo} 
-                          disabled={imageState.future.length === 0} 
-                          className="p-2 hover:bg-slate-700 rounded-lg text-yellow-400 disabled:opacity-20 disabled:text-slate-500 transition-all flex items-center gap-1 group" 
-                          title="Refazer"
-                        >
-                          <span className="text-[8px] font-bold uppercase hidden sm:inline">Refazer</span>
-                          <Redo2 className="w-4 h-4 group-active:scale-90 transition-transform" />
-                        </button>
+                      <div className={`flex p-1 rounded-xl border space-x-1 ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/50 border-slate-700'}`}>
+                        <button onClick={handleUndo} disabled={imageState.history.length === 0} className={`p-2 rounded-lg disabled:opacity-20 transition-all ${isLight ? 'text-indigo-600 hover:bg-slate-200' : 'text-yellow-400 hover:bg-slate-700'}`}><Undo2 className="w-4 h-4" /></button>
+                        <button onClick={handleRedo} disabled={imageState.future.length === 0} className={`p-2 rounded-lg disabled:opacity-20 transition-all ${isLight ? 'text-indigo-600 hover:bg-slate-200' : 'text-yellow-400 hover:bg-slate-700'}`}><Redo2 className="w-4 h-4" /></button>
                       </div>
                    </div>
                    
                    <div className="relative group">
                      <textarea 
-                       className={`w-full ${isLight ? 'bg-slate-50 text-slate-950 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium no-scrollbar`} 
-                       placeholder="Ex: 'Mantenha as roupas verdes'..." 
+                       className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium`} 
+                       placeholder="O que deseja ajustar na próxima edição?..." 
                        value={customPrompt} 
                        onChange={e => setCustomPrompt(e.target.value)} 
                      />
-                     <button 
-                       onClick={() => handleProcess('custom')}
-                       disabled={!customPrompt.trim() || status === 'processing'}
-                       className="absolute right-2 bottom-2 p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all shadow-lg disabled:opacity-50"
-                     >
-                       <Sparkles className="w-4 h-4" />
-                     </button>
+                     <button onClick={() => handleProcess('custom')} disabled={!customPrompt.trim() || status === 'processing'} className="absolute right-2 bottom-2 p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg disabled:opacity-50"><Sparkles className="w-4 h-4" /></button>
                    </div>
                 </div>
 
@@ -469,128 +396,132 @@ export default function App() {
                   <h2 className={`text-[10px] flex items-center gap-2 mb-6 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-3.5 h-3.5 text-indigo-600" /> Métodos de Restauração</h2>
                   <div className="grid grid-cols-1 gap-2.5">
                     {RESTORATION_OPTIONS.map(opt => (
-                      <ActionCard 
-                        key={opt.id} 
-                        option={opt} 
-                        active={activeMode === opt.id && status === 'success'} 
-                        onClick={() => handleProcess(opt.id)} 
-                        isLight={isLight} 
-                      />
+                      <ActionCard key={opt.id} option={opt} active={activeMode === opt.id && status === 'success'} onClick={() => handleProcess(opt.id)} isLight={isLight} />
                     ))}
                   </div>
                 </div>
-
-                <div className={`${cardBg} rounded-3xl border p-4 shadow-xl`}>
-                   <div className="flex items-center gap-2 mb-3 text-[9px] uppercase font-bold text-slate-500">
-                      <Cpu className="w-3 h-3" /> Sistema
-                   </div>
-                   <div className="flex gap-2">
-                      <Button onClick={handleFullReset} variant="ghost" className="flex-1 h-10 uppercase text-[9px] tracking-elegant border border-slate-700/30" icon={RotateCcw}>Limpar Tudo</Button>
-                   </div>
-                </div>
+                <Button onClick={handleFullReset} variant="ghost" className={`w-full h-10 uppercase text-[9px] tracking-elegant border ${isLight ? 'border-slate-400 text-slate-500 hover:text-slate-900' : 'border-slate-700/30'}`} icon={RotateCcw}>Limpar Estúdio</Button>
               </div>
             </div>
           )
         )}
 
-        {(activeTab === 'merge' || activeTab === 'generate') && (
+        {activeTab === 'merge' && (
           <div className="grid md:grid-cols-2 gap-12 py-10">
-            {activeTab === 'merge' ? (
-               !mergeState.results ? (
-                <div className="space-y-8">
-                  <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Mescle <span className="text-yellow-500 font-normal">sujeitos</span>.</h1>
-                  <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Combine elementos de duas fotos em uma única imagem.</p>
-                  <div className="grid grid-cols-2 gap-4">
-                    <UploaderCompact label="Foto A" current={mergeState.imageA} onSelect={(f:any, b:any, m:any) => handleMergeImageSelect('A', f, b, m)} isLight={isLight} />
-                    <UploaderCompact label="Foto B" current={mergeState.imageB} onSelect={(f:any, b:any, m:any) => handleMergeImageSelect('B', f, b, m)} isLight={isLight} />
-                  </div>
-                  <div className={`${cardBg} p-6 rounded-3xl border shadow-xl`}>
-                    <textarea className={`w-full ${isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-32 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium`} placeholder="O que deseja mesclar?" value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
-                    <Button onClick={handleMergeAction} disabled={status === 'processing' || !mergeState.imageA || !mergeState.imageB || !customPrompt.trim()} className="w-full mt-4 h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Layers}>Gerar Resultado</Button>
-                  </div>
-                </div>
-               ) : (
-                <ResultsGallery results={mergeState.results} index={mergeState.resultIndex} onSelect={(idx:any) => setMergeState(p => ({...p, resultIndex: idx}))} onFullScreen={setFullScreenImage} navigate={navigateResults} cardBg={cardBg} status={status} progress={processingProgress} onReset={() => setMergeState(p => ({...p, results: null}))} onDownload={() => handleDownloadImage(mergeState.results ? mergeState.results[mergeState.resultIndex] : null)} />
-               )
-            ) : (
-              !generateState.results ? (
-                <div className="space-y-8">
-                  <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Crie <span className="text-yellow-500 font-normal">arte</span> pura.</h1>
-                  <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Transforme palavras em imagens detalhadas.</p>
-                  
-                  <div className="flex items-center gap-4">
-                     <div className="w-32 h-32 flex-shrink-0">
-                       <UploaderCompact label="Base (Opcional)" current={generateState.baseImage} onSelect={handleGenerateImageSelect} isLight={isLight} />
-                     </div>
-                     <div className="flex-1">
-                        <p className={`text-[10px] uppercase font-bold tracking-elegant mb-2 ${textSub}`}>Referência Visual</p>
-                        <p className={`text-[9px] leading-relaxed ${textSub} opacity-80`}>Use uma imagem como guia ou deixe vazio para criação livre.</p>
-                     </div>
-                  </div>
-
-                  <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-6`}>
-                    <div>
-                      <p className={`text-[10px] uppercase font-bold tracking-elegant mb-3 ${textSub}`}>Prompt de Criação</p>
-                      <textarea className={`w-full ${isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-40 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium no-scrollbar`} placeholder="O que deseja criar?" value={generateState.prompt} onChange={e => setGenerateState(p => ({...p, prompt: e.target.value}))} />
+            <div className="space-y-8">
+               <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Mescle <span className="text-yellow-500 font-bold">pessoas</span>.</h1>
+               <div className="grid grid-cols-2 gap-4">
+                  <UploaderCompact label="Foto A" current={mergeState.imageA} onSelect={(f:any, b:any, m:any) => setMergeState(p => ({...p, imageA: b, mimeTypeA: m}))} isLight={isLight} />
+                  <UploaderCompact label="Foto B" current={mergeState.imageB} onSelect={(f:any, b:any, m:any) => setMergeState(p => ({...p, imageB: b, mimeTypeB: m}))} isLight={isLight} />
+               </div>
+               <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-4`}>
+                  <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-32 outline-none border transition-all focus:border-indigo-600`} placeholder="Instrução de mesclagem..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
+                  <div className="flex flex-col gap-2">
+                    <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Quantidade de Variações</p>
+                    <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
+                        {[1, 2, 3, 4].map(n => (
+                          <button key={n} onClick={() => setMergeCount(n)} className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${mergeCount === n ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500 hover:text-indigo-400'}`}>{n}x</button>
+                        ))}
                     </div>
-
-                    <div className="grid grid-cols-2 gap-6">
-                       <div>
-                          <p className={`text-[10px] uppercase font-bold tracking-elegant mb-3 ${textSub}`}>Quantidade</p>
-                          <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/40 border-slate-700'}`}>
-                            {[1, 2, 4].map((n) => (
-                              <button
-                                key={n}
-                                onClick={() => setGenerateCount(n)}
-                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${generateCount === n ? 'bg-indigo-600 text-white shadow-sm' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-400 hover:text-white'}`}
-                              >
-                                {n}x
-                              </button>
-                            ))}
-                          </div>
-                       </div>
-                       <div>
-                          <p className={`text-[10px] uppercase font-bold tracking-elegant mb-3 ${textSub}`}>Formato</p>
-                          <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/40 border-slate-700'}`}>
-                             <button onClick={() => setAspectRatio('1:1')} className={`flex-1 flex justify-center py-1.5 rounded-lg transition-all ${aspectRatio === '1:1' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`} title="Quadrado 1:1"><Square className="w-3.5 h-3.5" /></button>
-                             <button onClick={() => setAspectRatio('16:9')} className={`flex-1 flex justify-center py-1.5 rounded-lg transition-all ${aspectRatio === '16:9' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`} title="Widescreen 16:9"><RectangleHorizontal className="w-3.5 h-3.5" /></button>
-                             <button onClick={() => setAspectRatio('9:16')} className={`flex-1 flex justify-center py-1.5 rounded-lg transition-all ${aspectRatio === '9:16' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`} title="Retrato 9:16"><RectangleVertical className="w-3.5 h-3.5" /></button>
-                          </div>
-                       </div>
-                    </div>
-
-                    <Button onClick={() => handleGenerate()} disabled={status === 'processing' || !generateState.prompt.trim()} className="w-full h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Sparkles}>Criar Imagem</Button>
                   </div>
-                </div>
-              ) : (
-                <ResultsGallery results={generateState.results} index={generateState.resultIndex} onSelect={(idx:any) => setGenerateState(p => ({...p, resultIndex: idx}))} onFullScreen={setFullScreenImage} navigate={navigateResults} cardBg={cardBg} status={status} progress={processingProgress} onReset={() => setGenerateState(p => ({...p, results: null}))} onDownload={() => handleDownloadImage(generateState.results ? generateState.results[generateState.resultIndex] : null)} />
-              )
+                  <Button onClick={handleMergeAction} className="w-full h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Layers}>Gerar Fusão</Button>
+               </div>
+            </div>
+            {mergeState.results && (
+              <ResultsGallery 
+                results={mergeState.results} 
+                currentIndex={mergeState.resultIndex}
+                onIndexChange={(idx: number) => setMergeState(p => ({...p, resultIndex: idx}))}
+                onDownload={() => handleDownloadImage(mergeState.results![mergeState.resultIndex])} 
+                cardBg={cardBg} 
+                onReset={() => setMergeState(p => ({...p, results: null}))} 
+              />
             )}
-            <ChatAssistant messages={chatMessages} isLight={isLight} cardBg={cardBg} textMain={textMain} />
+            {!mergeState.results && <ChatAssistant cardBg={cardBg} isLight={isLight} />}
+          </div>
+        )}
+
+        {activeTab === 'generate' && (
+          <div className="grid md:grid-cols-2 gap-12 py-10">
+            <div className="space-y-8">
+               <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Crie <span className="text-yellow-500 font-bold">arte</span>.</h1>
+               
+               <div className="flex items-center gap-4">
+                  <div className="w-24 h-24 sm:w-32 sm:h-32">
+                    <UploaderCompact 
+                      label="Referência" 
+                      current={generateState.baseImage} 
+                      onSelect={(f:any, b:any, m:any) => setGenerateState(p => ({...p, baseImage: b, baseMimeType: m}))} 
+                      isLight={isLight} 
+                    />
+                  </div>
+                  <div className="flex-1">
+                     <p className={`text-[10px] uppercase font-bold tracking-elegant mb-1 ${textSub}`}>Base (Opcional)</p>
+                     <p className={`text-[9px] leading-relaxed ${textSub} opacity-80`}>Use uma imagem como guia visual para a IA.</p>
+                  </div>
+               </div>
+
+               <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-6`}>
+                  <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-40 outline-none border transition-all focus:border-indigo-600`} placeholder="Descreva sua visão..." value={generateState.prompt} onChange={e => setGenerateState(p => ({...p, prompt: e.target.value}))} />
+                  <div className="grid grid-cols-2 gap-4">
+                     <div className="flex flex-col gap-2">
+                        <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Quantidade</p>
+                        <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
+                           {[1, 2, 3, 4].map(n => (
+                             <button key={n} onClick={() => setGenerateCount(n)} className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${generateCount === n ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500 hover:text-indigo-400'}`}>{n}x</button>
+                           ))}
+                        </div>
+                     </div>
+                     <div className="flex flex-col gap-2">
+                        <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Proporção</p>
+                        <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
+                           <button onClick={() => setAspectRatio('1:1')} className={`flex-1 flex justify-center py-1.5 rounded-lg ${aspectRatio === '1:1' ? 'bg-indigo-600 text-white' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500'}`}><Square className="w-3.5 h-3.5" /></button>
+                           <button onClick={() => setAspectRatio('16:9')} className={`flex-1 flex justify-center py-1.5 rounded-lg ${aspectRatio === '16:9' ? 'bg-indigo-600 text-white' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500'}`}><RectangleHorizontal className="w-3.5 h-3.5" /></button>
+                        </div>
+                     </div>
+                  </div>
+                  <Button onClick={handleGenerate} className="w-full h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Sparkles}>Criar Imagem</Button>
+               </div>
+            </div>
+            {generateState.results && (
+              <ResultsGallery 
+                results={generateState.results} 
+                currentIndex={generateState.resultIndex}
+                onIndexChange={(idx: number) => setGenerateState(p => ({...p, resultIndex: idx}))}
+                onDownload={() => handleDownloadImage(generateState.results![generateState.resultIndex])} 
+                cardBg={cardBg} 
+                onReset={() => setGenerateState(p => ({...p, results: null}))} 
+              />
+            )}
+            {!generateState.results && <ChatAssistant cardBg={cardBg} isLight={isLight} />}
           </div>
         )}
       </main>
 
-      {fullScreenImage && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4" onClick={() => setFullScreenImage(null)}>
-          <button className="absolute top-6 right-6 p-3 text-white/50 hover:text-white transition-colors" onClick={() => setFullScreenImage(null)}><Minimize2 className="w-8 h-8" /></button>
-          <div className="relative w-full h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
-            <img src={fullScreenImage} className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" alt="Fullscreen" />
-          </div>
-        </div>
-      )}
+      <nav className={`md:hidden fixed bottom-4 left-4 right-4 z-50 p-2 rounded-[2rem] border backdrop-blur-3xl shadow-2xl flex justify-between ${isLight ? 'bg-white/95 border-slate-300 shadow-xl' : 'bg-slate-950/80 border-slate-800'}`}>
+         {(['restore', 'merge', 'generate'] as AppTab[]).map(tab => (
+           <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 flex flex-col items-center gap-1 rounded-[1.5rem] transition-all ${activeTab === tab ? 'bg-indigo-600 text-white' : isLight ? 'text-slate-400 hover:text-indigo-600' : 'text-slate-500'}`}>
+             {tab === 'restore' ? <RotateCcw className="w-4 h-4" /> : tab === 'merge' ? <Layers className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
+             <span className="text-[7px] uppercase font-bold tracking-widest">{tab === 'restore' ? 'Restaurar' : tab === 'merge' ? 'Mesclar' : 'Gerar'}</span>
+           </button>
+         ))}
+      </nav>
 
       <Modal isOpen={showAbout} onClose={() => setShowAbout(false)} title="Sobre RestaurAIlma" isLight={isLight}>
         <div className="space-y-8 text-center">
-          <div className="relative w-full aspect-square rounded-[2rem] overflow-hidden shadow-2xl border border-indigo-600/20">
+          <div className={`relative w-full aspect-square rounded-[2rem] overflow-hidden shadow-2xl border ${isLight ? 'border-indigo-600/10' : 'border-indigo-600/20'}`}>
              <AboutCarousel images={ABOUT_CAROUSEL_IMAGES} />
-             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+             <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
           </div>
-          <div className={`space-y-6 ${isLight ? 'text-slate-950' : 'text-slate-100'}`}>
-            <p className="text-sm italic font-light leading-relaxed tracking-soft">"Para conservar a história de quem nos trouxe até aqui."</p>
-            <div className="flex flex-col items-center gap-1">
-               <div className="h-[1px] w-12 bg-indigo-600/30 mb-2"></div>
-               <span className="text-xs font-bold uppercase tracking-elegant flex items-center gap-2">Para Ilma S2 <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" /></span>
+          <div className="space-y-6">
+            <p className={`text-sm italic leading-relaxed tracking-soft ${isLight ? 'text-indigo-700 font-medium' : 'text-indigo-400 font-extralight'}`}>
+              "para conservar a memória de quem nos trouxe até aqui"
+            </p>
+            <div className="flex flex-col items-center gap-1.5 opacity-80">
+              <div className={`h-[1px] w-8 ${isLight ? 'bg-indigo-600/50' : 'bg-indigo-600/30'} mb-2`}></div>
+              <span className={`text-[10px] font-bold uppercase tracking-elegant flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                Para Ilma S2 <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" />
+              </span>
             </div>
           </div>
         </div>
@@ -598,17 +529,17 @@ export default function App() {
 
       <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="Histórico" isLight={isLight}>
         {history.length === 0 ? (
-          <div className="text-center py-12 opacity-40"><Clock className="w-12 h-12 mx-auto mb-4" /><p className="text-xs uppercase tracking-elegant">Vazio.</p></div>
+          <div className="text-center py-12 opacity-40"><Clock className={`w-12 h-12 mx-auto mb-4 ${isLight ? 'text-slate-400' : ''}`} /><p className={`text-xs uppercase tracking-elegant ${isLight ? 'text-slate-500' : ''}`}>Sem registros ainda.</p></div>
         ) : (
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 no-scrollbar">
             {history.map((item) => (
-              <div key={item.id} className={`flex gap-4 p-3 ${isLight ? 'bg-white' : 'bg-slate-800/40'} rounded-2xl border ${isLight ? 'border-slate-200' : 'border-slate-700/50'} group`}>
-                <div className="w-20 h-20 flex-shrink-0 overflow-hidden rounded-xl"><img src={item.processed} className="w-full h-full object-cover" alt="History" /></div>
-                <div className="flex-1 flex flex-col justify-between py-1 overflow-hidden">
-                  <div className="text-[10px] uppercase font-bold text-indigo-600 mb-1">{item.mode}</div>
+              <div key={item.id} className={`flex gap-4 p-3 rounded-2xl border transition-colors ${isLight ? 'bg-slate-50 border-slate-200 hover:border-indigo-400' : 'bg-slate-800/40 border-slate-700/50 hover:border-slate-500'}`}>
+                <div className={`w-16 h-16 flex-shrink-0 overflow-hidden rounded-xl border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}><img src={item.processed} className="w-full h-full object-cover" /></div>
+                <div className="flex-1 flex flex-col justify-center">
+                  <div className={`text-[9px] uppercase font-bold mb-1 ${isLight ? 'text-indigo-700' : 'text-indigo-400'}`}>{item.mode}</div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleDownloadImage(item.processed)} className="p-1.5 hover:bg-indigo-600 rounded-lg transition-colors text-slate-400 hover:text-white"><Download className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => setHistory(h => h.filter(x => x.id !== item.id))} className="p-1.5 hover:bg-red-600 rounded-lg transition-colors text-slate-400 hover:text-white"><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDownloadImage(item.processed)} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-500 hover:bg-indigo-600 hover:text-white' : 'text-slate-400 hover:bg-indigo-600 hover:text-white'}`}><Download className="w-3 h-3" /></button>
+                    <button onClick={() => setHistory(h => h.filter(x => x.id !== item.id))} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-500 hover:bg-red-600 hover:text-white' : 'text-slate-400 hover:bg-red-600 hover:text-white'}`}><Trash2 className="w-3 h-3" /></button>
                   </div>
                 </div>
               </div>
@@ -618,33 +549,78 @@ export default function App() {
       </Modal>
 
       <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} title="Configurações" isLight={isLight}>
-        <div className="space-y-8">
-          <section>
-            <h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600 mb-4">Aparência</h3>
-            <div className="flex bg-slate-800/10 p-1 rounded-xl border border-slate-400/20">
-              <button onClick={() => setSettings(s => ({...s, theme: 'dark'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all font-bold ${!isLight ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}><Moon className="w-3 h-3" /> Dark</button>
-              <button onClick={() => setSettings(s => ({...s, theme: 'light'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all font-bold ${isLight ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}><Sun className="w-3 h-3" /> Light</button>
-            </div>
-          </section>
+        <div className="space-y-6">
+           <h3 className={`text-[10px] uppercase tracking-elegant font-bold mb-2 ${isLight ? 'text-indigo-700' : 'text-indigo-400'}`}>Tema Visual</h3>
+           <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-200 border-slate-300' : 'bg-slate-800/10 border-slate-400/20'}`}>
+              <button onClick={() => setSettings(s => ({...s, theme: 'dark'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${!isLight ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-900'}`}><Moon className="w-3 h-3" /> Dark</button>
+              <button onClick={() => setSettings(s => ({...s, theme: 'light'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${isLight ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-900'}`}><Sun className="w-3 h-3" /> Light</button>
+           </div>
         </div>
       </Modal>
     </div>
   );
 }
 
-function AboutCarousel({ images }: { images: string[] }) {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => { setIndex(prev => (prev + 1) % images.length); }, 4000);
-    return () => clearInterval(timer);
-  }, [images.length]);
+function LoaderOverlay({ progress }: { progress?: string }) {
   return (
-    <div className="w-full h-full relative group">
-      {images.map((img, i) => (
-        <img key={i} src={img} className={`absolute inset-0 w-full h-full object-cover transition-all duration-1000 ease-in-out ${index === i ? 'opacity-100 scale-100' : 'opacity-0 scale-110'}`} alt="Exemplo" />
-      ))}
-      <div className="absolute bottom-4 right-4 flex gap-1.5 z-20">
-        {images.map((_, i) => ( <div key={i} className={`h-1 rounded-full transition-all duration-300 ${index === i ? 'w-6 bg-white' : 'w-2 bg-white/40'}`} /> ))}
+    <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
+      <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+      <p className="text-lg font-bold uppercase tracking-elegant text-white">Processando...</p>
+      {progress && <p className="text-[10px] uppercase tracking-widest text-indigo-400 mt-2">{progress}</p>}
+    </div>
+  );
+}
+
+function ResultsGallery({ results, currentIndex = 0, onIndexChange, onDownload, onReset, cardBg }: any) {
+  const hasMultiple = results.length > 1;
+
+  const handleNext = () => {
+    onIndexChange((currentIndex + 1) % results.length);
+  };
+
+  const handlePrev = () => {
+    onIndexChange((currentIndex - 1 + results.length) % results.length);
+  };
+
+  return (
+    <div className={`${cardBg} rounded-3xl border p-4 flex flex-col items-center justify-center min-h-[400px] shadow-2xl relative`}>
+      <div className="relative group w-full flex flex-col items-center">
+        <img src={results[currentIndex]} className="max-w-full rounded-2xl shadow-xl mb-4 transition-all duration-300" alt={`Resultado ${currentIndex + 1}`} />
+        
+        {hasMultiple && (
+          <>
+            <button onClick={handlePrev} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-indigo-600 transition-all opacity-0 group-hover:opacity-100 backdrop-blur-sm">
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <button onClick={handleNext} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-indigo-600 transition-all opacity-0 group-hover:opacity-100 backdrop-blur-sm">
+              <ChevronRight className="w-6 h-6" />
+            </button>
+            <div className="absolute bottom-6 px-3 py-1 bg-black/60 backdrop-blur-md rounded-full text-[10px] font-bold text-white uppercase tracking-widest border border-white/10">
+              {currentIndex + 1} / {results.length}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="flex gap-4 w-full">
+         <Button onClick={onDownload} variant="primary" className="flex-1 h-12 uppercase text-xs font-bold" icon={Download}>Baixar</Button>
+         <Button onClick={onReset} variant="secondary" className="flex-1 h-12 uppercase text-xs font-bold">Refazer</Button>
+      </div>
+    </div>
+  );
+}
+
+function ChatAssistant({ cardBg, isLight }: any) {
+  return (
+    <div className={`${cardBg} rounded-[2rem] border h-[400px] flex flex-col overflow-hidden shadow-xl`}>
+      <div className={`p-4 border-b ${isLight ? 'border-slate-200 bg-slate-50/50' : 'border-slate-800 bg-black/5'} flex items-center justify-between`}>
+        <span className={`text-[10px] font-bold uppercase tracking-elegant opacity-60 ${isLight ? 'text-slate-900' : ''}`}>IA Concierge</span>
+        <MessageSquare className="w-4 h-4 text-indigo-600" />
+      </div>
+      <div className="flex-1 p-6 space-y-4">
+        <div className={`p-4 rounded-2xl text-xs leading-relaxed border ${isLight ? 'bg-slate-50 text-slate-800 border-slate-200' : 'bg-slate-800 border-transparent'}`}>
+          Olá! Sou seu assistente de IA. Como posso ajudar a recuperar suas memórias hoje?
+        </div>
       </div>
     </div>
   );
@@ -655,10 +631,10 @@ function Modal({ isOpen, onClose, title, children, isLight }: any) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-md" onClick={onClose} />
-      <div className={`relative w-full max-w-md ${isLight ? 'bg-slate-50 text-slate-950' : 'bg-slate-900 text-white'} rounded-[2.5rem] border ${isLight ? 'border-slate-200 shadow-2xl' : 'border-slate-800'} overflow-hidden`}>
-        <div className={`p-6 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'} flex items-center justify-between`}>
-          <h2 className="text-xs uppercase font-bold tracking-elegant">{title}</h2>
-          <button onClick={onClose} className="p-2 hover:bg-black/5 rounded-full transition-colors"><X className="w-5 h-5" /></button>
+      <div className={`relative w-full max-w-md ${isLight ? 'bg-white text-slate-950' : 'bg-slate-900 text-white'} rounded-[2rem] border border-slate-800/50 overflow-hidden shadow-2xl`}>
+        <div className={`p-6 border-b flex items-center justify-between ${isLight ? 'border-slate-100' : 'border-slate-800/20'}`}>
+          <h2 className={`text-xs uppercase font-bold tracking-elegant ${isLight ? 'text-indigo-700' : ''}`}>{title}</h2>
+          <button onClick={onClose} className={`p-2 rounded-full transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400 hover:text-slate-900' : 'hover:bg-black/5'}`}><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6">{children}</div>
       </div>
@@ -666,92 +642,44 @@ function Modal({ isOpen, onClose, title, children, isLight }: any) {
   );
 }
 
-function ResultsGallery({ results, index, onSelect, onFullScreen, navigate, cardBg, status, onReset, onDownload, progress }: any) {
-  if (!results || results.length === 0) return null;
-  return (
-    <div className={`${cardBg} rounded-3xl border p-4 relative overflow-hidden flex flex-col items-center justify-center min-h-[500px] shadow-2xl transition-all`}>
-      {status === 'processing' && <LoaderOverlay progress={progress} />}
-      <div className="w-full mb-4 flex justify-between items-center px-2">
-        <p className="text-[10px] uppercase font-bold tracking-elegant text-indigo-600">Resultados</p>
-        <div className="flex gap-4">
-          <button onClick={onDownload} className="text-[10px] uppercase font-bold hover:text-indigo-600 transition-colors flex items-center gap-1"><Download className="w-3 h-3" /> Baixar</button>
-          <button onClick={onReset} className="text-[10px] uppercase font-bold hover:text-indigo-600 transition-colors">Voltar</button>
-        </div>
-      </div>
-      <div className="relative w-full flex items-center justify-center">
-        <div className={`grid gap-4 w-full ${results.length > 2 ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2'} ${results.length === 1 ? 'max-w-md' : ''}`}>
-          {results.map((res: string, idx: number) => (
-            <div key={idx} onClick={() => onSelect(idx)} className={`relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer group ${index === idx ? 'border-indigo-600 shadow-lg' : 'border-transparent opacity-60 hover:opacity-100'}`}>
-              <img src={res} className="w-full aspect-square object-cover" alt={`Variação ${idx + 1}`} />
-              <button onClick={(e) => { e.stopPropagation(); onFullScreen(res); }} className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-lg hover:bg-yellow-400 hover:text-slate-900 transition-colors opacity-0 group-hover:opacity-100"><Maximize2 className="w-3 h-3" /></button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LoaderOverlay({ progress }: { progress?: string }) {
-  return (
-    <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
-      <div className="relative mb-6">
-        <div className="w-20 h-20 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin"></div>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Loader2 className="w-8 h-8 text-indigo-600 animate-pulse" />
-        </div>
-      </div>
-      <p className="text-xl font-bold uppercase tracking-elegant text-white mb-2">Processando Pixels...</p>
-      {progress && (
-        <p className="text-[10px] uppercase tracking-widest text-indigo-400 animate-pulse font-bold">{progress}</p>
-      )}
-    </div>
-  );
-}
-
-function ChatAssistant({ messages, cardBg, isLight }: any) {
-  return (
-    <div className={`${cardBg} rounded-[2.5rem] border h-[500px] flex flex-col overflow-hidden shadow-xl`}>
-      <div className={`p-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'} flex items-center justify-between bg-black/5`}>
-        <span className={`text-[10px] font-bold uppercase tracking-elegant opacity-60 ${isLight ? 'text-slate-950' : 'text-white'}`}>Assistente</span>
-        <MessageSquare className="w-4 h-4 text-indigo-600" />
-      </div>
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
-        {messages.map((msg: any, i: number) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-4 rounded-2xl text-xs leading-relaxed shadow-sm font-bold ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : isLight ? 'bg-white text-slate-950 border border-slate-200 rounded-tl-none' : 'bg-slate-800 text-slate-100 rounded-tl-none font-light'}`}>
-              {msg.text}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function UploaderCompact({ label, current, onSelect, isLight }: any) {
   return (
-    <label className={`aspect-square rounded-2xl border-2 border-dashed ${isLight ? 'border-slate-300 bg-white/50' : 'border-slate-700 bg-slate-900/50'} flex flex-col items-center justify-center cursor-pointer transition-all hover:border-indigo-600 group relative overflow-hidden h-full w-full`}>
-      {current ? ( <img src={current} className="w-full h-full object-cover rounded-xl transition-transform group-hover:scale-105" alt="Preview" /> ) : (
+    <label className={`aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all hover:border-indigo-600 relative overflow-hidden h-full w-full ${isLight ? 'bg-slate-50 border-slate-400 hover:bg-slate-100' : 'border-slate-700'}`}>
+      {current ? <img src={current} className="w-full h-full object-cover rounded-xl" /> : (
         <div className="flex flex-col items-center p-2 text-center">
           <ImageIcon className="w-5 h-5 text-indigo-600 mb-1" />
-          <span className={`text-[10px] font-bold uppercase tracking-soft ${isLight ? 'text-slate-950' : 'text-slate-500'}`}>{label}</span>
+          <span className={`text-[10px] font-bold uppercase ${isLight ? 'text-slate-600' : ''}`}>{label}</span>
         </div>
       )}
-      <input type="file" className="hidden" onChange={(e:any) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => onSelect(f, r.result as string, f.type); r.readAsDataURL(f); } }} />
+      <input type="file" className="hidden" onChange={(e:any) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => onSelect(f, r.result, f.type); r.readAsDataURL(f); } }} />
     </label>
+  );
+}
+
+function AboutCarousel({ images }: { images: string[] }) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => { setIndex(p => (p + 1) % images.length); }, 4000);
+    return () => clearInterval(timer);
+  }, [images.length]);
+  return (
+    <div className="w-full h-full relative">
+      {images.map((img, i) => (
+        <img key={i} src={img} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${index === i ? 'opacity-100' : 'opacity-0'}`} />
+      ))}
+    </div>
   );
 }
 
 function ActionCard({ option, active, onClick, isLight }: any) {
   return (
-    <button onClick={onClick} className={`flex items-center p-3.5 rounded-2xl border text-left transition-all group w-full ${active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : isLight ? 'bg-white border-slate-300 text-slate-950 hover:border-indigo-600 shadow-sm' : 'bg-slate-800/50 border-slate-700 text-white hover:border-indigo-400'}`}>
-      <div className={`p-2 rounded-xl mr-3.5 transition-all ${active ? 'bg-white/20' : 'bg-indigo-600/10 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>
+    <button onClick={onClick} className={`flex items-center p-3.5 rounded-2xl border text-left transition-all w-full ${active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : isLight ? 'bg-white border-slate-300 text-slate-900 hover:border-indigo-400 hover:bg-slate-50 shadow-sm' : 'bg-slate-800 border-slate-700 hover:border-indigo-400'}`}>
+      <div className={`p-2 rounded-xl mr-3.5 ${active ? 'bg-white/20' : isLight ? 'bg-indigo-100 text-indigo-700' : 'bg-indigo-600/10 text-indigo-600'}`}>
         <option.icon className="w-4 h-4" />
       </div>
       <div className="flex-1">
-        <div className="text-[10px] uppercase font-bold tracking-soft">{option.label}</div>
-        <div className={`text-[8px] opacity-70 line-clamp-1 mt-0.5 ${isLight ? 'font-bold' : 'font-light'}`}>{option.description}</div>
+        <div className={`text-[10px] uppercase font-bold ${active ? 'text-white' : ''}`}>{option.label}</div>
+        <div className={`text-[8px] line-clamp-1 ${active ? 'text-white/70' : isLight ? 'text-slate-500' : 'opacity-70'}`}>{option.description}</div>
       </div>
     </button>
   );

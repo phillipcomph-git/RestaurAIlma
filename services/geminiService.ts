@@ -34,6 +34,7 @@ export const processImage = async (
   modelPreference: string = 'gemini-2.5-flash-image'
 ): Promise<ProcessResult> => {
   return withRetry(async () => {
+    // Inicializa com a chave de ambiente conforme diretrizes
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const response = await ai.models.generateContent({
@@ -41,19 +42,19 @@ export const processImage = async (
       contents: {
         parts: [
           { inlineData: { mimeType, data: cleanBase64(base64Image) } },
-          { text: `Restauração profissional: ${promptInstruction}. Mantenha a identidade e remova falhas.` }
+          { text: `Restauração de imagem: ${promptInstruction}. Mantenha as feições originais, remova danos e melhore a nitidez de forma realista.` }
         ]
       },
       config: {
-        systemInstruction: "Você é um especialista em restauração fotográfica. Sua tarefa é recuperar fotos danificadas, colorir se necessário e aprimorar a qualidade preservando a identidade original.",
-        temperature: 0.1,
-        imageConfig: { aspectRatio: "1:1" },
+        systemInstruction: "Você é um especialista em restauração fotográfica. Sua missão é recuperar fotos antigas, colorir e remover falhas físicas preservando a identidade original do sujeito.",
+        temperature: 0.2,
+        imageConfig: { aspectRatio: "1:1" }
       }
     });
 
     const candidates = response.candidates;
     if (!candidates || candidates.length === 0) {
-      throw new Error("Não foi possível processar a imagem.");
+      throw new Error("A IA não retornou resultados.");
     }
 
     const parts = candidates[0].content?.parts;
@@ -68,7 +69,7 @@ export const processImage = async (
       };
     }
     
-    throw new Error("A IA não retornou uma imagem válida.");
+    throw new Error("A IA não gerou uma nova imagem.");
   });
 };
 
@@ -91,7 +92,7 @@ export const generateImageFromPrompt = async (
         model: modelId,
         contents: { parts },
         config: {
-          temperature: 0.7 + (i * 0.1),
+          temperature: 0.7 + (i * 0.05),
           imageConfig: { aspectRatio: aspectRatio as any }
         }
       });
@@ -104,7 +105,7 @@ export const generateImageFromPrompt = async (
           model: modelId
         };
       }
-      throw new Error("Falha na geração.");
+      throw new Error("Falha ao gerar imagem.");
     });
     
     results.push(result);
@@ -119,36 +120,45 @@ export const mergeImages = async (
   mimeA: string,
   imageB: string,
   mimeB: string,
-  instruction: string
+  instruction: string,
+  count: number = 1
 ): Promise<ProcessResult[]> => {
-  return withRetry(async () => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const modelId = 'gemini-2.5-flash-image';
+  const results: ProcessResult[] = [];
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const modelId = 'gemini-2.5-flash-image';
 
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: {
-        parts: [
-          { inlineData: { mimeType: mimeA, data: cleanBase64(imageA) } },
-          { inlineData: { mimeType: mimeB, data: cleanBase64(imageB) } },
-          { text: instruction }
-        ]
-      },
-      config: {
-        systemInstruction: "Mescle os elementos de ambas as imagens de forma harmoniosa e realista.",
-        temperature: 0.5, 
-        imageConfig: { aspectRatio: "1:1" }
+  for (let i = 0; i < count; i++) {
+    const result = await withRetry(async () => {
+      const response = await ai.models.generateContent({
+        model: modelId,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: mimeA, data: cleanBase64(imageA) } },
+            { inlineData: { mimeType: mimeB, data: cleanBase64(imageB) } },
+            { text: instruction }
+          ]
+        },
+        config: {
+          systemInstruction: "Mescle os elementos das duas imagens fornecidas de forma criativa e realista.",
+          temperature: 0.4 + (i * 0.05), 
+          imageConfig: { aspectRatio: "1:1" }
+        }
+      });
+
+      const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+      
+      if (imgPart?.inlineData?.data) {
+        return {
+          base64: `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`,
+          model: modelId
+        };
       }
+      throw new Error("Falha ao mesclar imagens.");
     });
-
-    const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
     
-    if (imgPart?.inlineData?.data) {
-      return [{
-        base64: `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`,
-        model: modelId
-      }];
-    }
-    throw new Error("Falha na mesclagem.");
-  });
+    results.push(result);
+    if (count > 1 && i < count - 1) await new Promise(r => setTimeout(r, 1000));
+  }
+  
+  return results;
 };

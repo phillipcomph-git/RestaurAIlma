@@ -6,7 +6,7 @@ import {
   Maximize2, Camera, ImageOff, Heart, Info, Send, Layers, 
   Image as ImageIcon, Undo2, Redo2, Download, Minimize2, Edit3, 
   Moon, Sun, UserCheck, SlidersHorizontal, ChevronLeft, ChevronRight, Key, Cpu, AlertCircle, Trash2,
-  ArrowRight, ExternalLink, Square, RectangleHorizontal, RectangleVertical, Loader2, CreditCard
+  ArrowRight, ExternalLink, Square, RectangleHorizontal, RectangleVertical, Loader2, CreditCard, Check
 } from 'lucide-react';
 
 import { Uploader } from './components/Uploader';
@@ -267,6 +267,19 @@ export default function App() {
     }
   };
 
+  const handleApplyResult = () => {
+    if (!imageState.processedPreview) return;
+    setImageState(prev => ({
+      ...prev,
+      originalPreview: prev.processedPreview,
+      processedPreview: null,
+      history: [...prev.history], // Já foi adicionado no handleProcess
+      future: []
+    }));
+    setStatus('idle');
+    setActiveMode(null);
+  };
+
   const handleUndo = () => {
     if (imageState.history.length === 0) return;
     const last = imageState.history[imageState.history.length - 1];
@@ -277,6 +290,7 @@ export default function App() {
       future: [prev.originalPreview!, ...prev.future],
       history: prev.history.slice(0, -1)
     }));
+    setStatus('idle');
   };
 
   const handleRedo = () => {
@@ -289,6 +303,7 @@ export default function App() {
       history: [...prev.history, prev.originalPreview!],
       future: prev.future.slice(1)
     }));
+    setStatus('idle');
   };
 
   const handleFullReset = () => {
@@ -384,8 +399,23 @@ export default function App() {
                 </div>
 
                 {imageState.processedPreview && (
-                   <div className="flex gap-4 items-center justify-center animate-in fade-in slide-in-from-top-4 duration-300">
-                      <Button onClick={() => handleDownloadImage(imageState.processedPreview)} variant="secondary" className="h-12 px-8 uppercase text-xs tracking-elegant" icon={Download}>Baixar Agora</Button>
+                   <div className="flex flex-col sm:flex-row gap-4 items-center justify-center animate-in fade-in slide-in-from-top-4 duration-300">
+                      <Button 
+                        onClick={handleApplyResult} 
+                        variant="primary" 
+                        className="h-14 px-10 uppercase text-xs tracking-elegant font-bold w-full sm:w-auto bg-green-600 hover:bg-green-500 shadow-green-500/20" 
+                        icon={Check}
+                      >
+                        Aplicar e Continuar
+                      </Button>
+                      <Button 
+                        onClick={() => handleDownloadImage(imageState.processedPreview)} 
+                        variant="secondary" 
+                        className="h-14 px-10 uppercase text-xs tracking-elegant font-bold w-full sm:w-auto" 
+                        icon={Download}
+                      >
+                        Baixar Agora
+                      </Button>
                    </div>
                 )}
               </div>
@@ -396,9 +426,25 @@ export default function App() {
                       <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-elegant text-indigo-600">
                          <MessageSquare className="w-3.5 h-3.5" /> Ajuste Manual
                       </div>
-                      <div className="flex bg-slate-800/50 p-0.5 rounded-lg border border-slate-700">
-                        <button onClick={handleUndo} disabled={imageState.history.length === 0} className="p-1.5 hover:bg-slate-700 rounded-md text-yellow-400 disabled:opacity-20 transition-all" title="Desfazer"><Undo2 className="w-3.5 h-3.5" /></button>
-                        <button onClick={handleRedo} disabled={imageState.future.length === 0} className="p-1.5 hover:bg-slate-700 rounded-md text-yellow-400 disabled:opacity-20 transition-all" title="Refazer"><Redo2 className="w-3.5 h-3.5" /></button>
+                      <div className="flex bg-slate-800/50 p-1 rounded-xl border border-slate-700 space-x-1">
+                        <button 
+                          onClick={handleUndo} 
+                          disabled={imageState.history.length === 0} 
+                          className="p-2 hover:bg-slate-700 rounded-lg text-yellow-400 disabled:opacity-20 disabled:text-slate-500 transition-all flex items-center gap-1 group" 
+                          title="Desfazer"
+                        >
+                          <Undo2 className="w-4 h-4 group-active:scale-90 transition-transform" />
+                          <span className="text-[8px] font-bold uppercase hidden sm:inline">Desfazer</span>
+                        </button>
+                        <button 
+                          onClick={handleRedo} 
+                          disabled={imageState.future.length === 0} 
+                          className="p-2 hover:bg-slate-700 rounded-lg text-yellow-400 disabled:opacity-20 disabled:text-slate-500 transition-all flex items-center gap-1 group" 
+                          title="Refazer"
+                        >
+                          <span className="text-[8px] font-bold uppercase hidden sm:inline">Refazer</span>
+                          <Redo2 className="w-4 h-4 group-active:scale-90 transition-transform" />
+                        </button>
                       </div>
                    </div>
                    

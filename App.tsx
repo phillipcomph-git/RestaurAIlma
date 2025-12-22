@@ -6,7 +6,7 @@ import {
   Maximize2, Camera, ImageOff, Heart, Info, Send, Layers, 
   Image as ImageIcon, Undo2, Redo2, Download, Minimize2, Edit3, 
   Moon, Sun, UserCheck, SlidersHorizontal, ChevronLeft, ChevronRight, Key, Cpu, AlertCircle, Trash2,
-  ArrowRight, ExternalLink
+  ArrowRight, ExternalLink, Square, RectangleHorizontal, RectangleVertical, Loader2, CreditCard
 } from 'lucide-react';
 
 import { Uploader } from './components/Uploader';
@@ -29,6 +29,13 @@ const RESTORATION_OPTIONS: ActionOption[] = [
     icon: ScanLine,
     description: 'Remove riscos e rasgos físicos.',
     prompt: 'Heavy restoration: fix physical damage like tears, scratches, and stains.'
+  },
+  {
+    id: 'remove-flaws',
+    label: 'Remover Falhas',
+    icon: Edit3,
+    description: 'Limpa poeira e manchas leves.',
+    prompt: 'Advanced flaw removal: clean up dust, specks, and minor surface imperfections from the photo.'
   },
   {
     id: 'colorize',
@@ -105,14 +112,13 @@ export default function App() {
   });
   const [mergeCount, setMergeCount] = useState(1);
   const [status, setStatus] = useState<ProcessingStatus>('idle');
+  const [processingProgress, setProcessingProgress] = useState<string>('');
   const [activeMode, setActiveMode] = useState<RestorationMode | null>(null);
   const [imageDescription, setImageDescription] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isQuotaError, setIsQuotaError] = useState(false);
   
-  const [restorationStrength, setRestorationStrength] = useState(70);
-  const [preserveFacialTraits, setPreserveFacialTraits] = useState(true);
-
   const [generateState, setGenerateState] = useState<GenerateState>({
     prompt: '', baseImage: null, baseMimeType: null, results: null, resultIndex: 0
   });
@@ -138,30 +144,36 @@ export default function App() {
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
   useEffect(() => {
-    // Verifica se a chave de API está configurada no ambiente ou selecionada via ponte
-    const checkKey = async () => {
-      const envKey = process.env.API_KEY;
-      const hasBridgeKey = typeof window !== 'undefined' && (window as any).aistudio && await (window as any).aistudio.hasSelectedApiKey();
-      setIsKeyMissing(!envKey && !hasBridgeKey);
+    const checkKeyStatus = async () => {
+      const hasKey = typeof window !== 'undefined' && (window as any).aistudio && await (window as any).aistudio.hasSelectedApiKey();
+      setIsKeyMissing(!process.env.API_KEY && !hasKey);
     };
-    checkKey();
+    checkKeyStatus();
   }, []);
-
-  useEffect(() => {
-    safeStorage.save('restaurai_settings', settings);
-    if (isLight) document.body.classList.add('theme-light');
-    else document.body.classList.remove('theme-light');
-  }, [settings, isLight]);
-
-  useEffect(() => {
-    safeStorage.save('restaurai_history', history);
-  }, [history]);
 
   const handleOpenKeySelector = async () => {
     if (typeof window !== 'undefined' && (window as any).aistudio) {
       await (window as any).aistudio.openSelectKey();
       setIsKeyMissing(false);
       setErrorMsg(null);
+      setIsQuotaError(false);
+    }
+  };
+
+  const handleApiError = (err: any) => {
+    setStatus('error');
+    setProcessingProgress('');
+    const errorString = err.message || "";
+    const quotaExceeded = err.status === 429 || errorString.includes("429") || errorString.includes("quota") || errorString.includes("limit");
+
+    if (err.message === "API_KEY_MISSING" || err.message === "API_KEY_INVALID") {
+      setErrorMsg("A chave de API não foi detectada ou é inválida. Clique para configurar.");
+      handleOpenKeySelector();
+    } else if (quotaExceeded) {
+      setIsQuotaError(true);
+      setErrorMsg("Limite de cota atingido (Erro 429). Chaves gratuitas têm limites baixos. Recomenda-se usar uma chave de conta com FATURAMENTO ATIVADO (Pay-as-you-go) para uso ilimitado.");
+    } else {
+      setErrorMsg(err.message || "Ocorreu um erro inesperado.");
     }
   };
 
@@ -199,59 +211,8 @@ export default function App() {
     setImageDescription(null);
     setStatus('idle');
     setErrorMsg(null);
+    setIsQuotaError(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleMergeAction = async () => {
-    if (!mergeState.imageA || !mergeState.imageB || !customPrompt.trim()) return;
-    setStatus('processing');
-    setErrorMsg(null);
-    try {
-      const results = await mergeImages(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt, mergeCount);
-      if (results && results.length > 0) {
-        setMergeState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
-        setImageDescription(results[0].description || null);
-        setStatus('success');
-      }
-    } catch (err: any) {
-      setStatus('error');
-      if (err.message === "API Key") {
-        setErrorMsg("API Key ausente. Selecione uma chave para continuar no Vercel.");
-        handleOpenKeySelector();
-      } else {
-        setErrorMsg(err.message || "Erro ao mesclar imagens.");
-      }
-    }
-  };
-
-  const handleGenerate = async (isRefining = false) => {
-    const currentPrompt = isRefining ? customPrompt : generateState.prompt;
-    if (!currentPrompt.trim()) return;
-    setStatus('processing');
-    setErrorMsg(null);
-    try {
-      const baseImg = isRefining && generateState.results ? { data: generateState.results[generateState.resultIndex], mimeType: 'image/png' } : (generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined);
-      const results = await generateImageFromPrompt(currentPrompt, isRefining ? 1 : generateCount, aspectRatio, baseImg);
-      if (results && results.length > 0) {
-        if (isRefining && generateState.results) {
-          const newResults = [...generateState.results];
-          newResults[generateState.resultIndex] = results[0].base64;
-          setGenerateState(prev => ({ ...prev, results: newResults }));
-        } else {
-          setGenerateState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
-        }
-        setImageDescription(results[0].description || null);
-        setStatus('success');
-      }
-    } catch (err: any) {
-      setStatus('error');
-      if (err.message === "API Key") {
-        setErrorMsg("API Key ausente. Selecione uma chave para continuar no Vercel.");
-        handleOpenKeySelector();
-      } else {
-        setErrorMsg(err.message || "Erro ao gerar arte.");
-      }
-    }
   };
 
   const handleMergeImageSelect = (side: 'A' | 'B', file: File, base64: string, mimeType: string) => {
@@ -261,11 +222,68 @@ export default function App() {
       setMergeState(prev => ({ ...prev, imageB: base64, mimeTypeB: mimeType }));
     }
     setErrorMsg(null);
+    setIsQuotaError(false);
+    setStatus('idle');
   };
 
   const handleGenerateImageSelect = (file: File, base64: string, mimeType: string) => {
     setGenerateState(prev => ({ ...prev, baseImage: base64, baseMimeType: mimeType }));
     setErrorMsg(null);
+    setIsQuotaError(false);
+    setStatus('idle');
+  };
+
+  const handleMergeAction = async () => {
+    if (!mergeState.imageA || !mergeState.imageB || !customPrompt.trim()) return;
+    setStatus('processing');
+    setErrorMsg(null);
+    setIsQuotaError(false);
+    try {
+      const results = await mergeImages(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt, mergeCount);
+      setMergeState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
+      setStatus('success');
+    } catch (err: any) {
+      handleApiError(err);
+    }
+  };
+
+  const handleGenerate = async (isRefining = false) => {
+    const currentPrompt = isRefining ? customPrompt : generateState.prompt;
+    if (!currentPrompt.trim()) return;
+    setStatus('processing');
+    setErrorMsg(null);
+    setIsQuotaError(false);
+    
+    const count = isRefining ? 1 : generateCount;
+    const finalResults: string[] = [];
+
+    try {
+      for (let i = 0; i < count; i++) {
+        if (count > 1) {
+          setProcessingProgress(`Gerando imagem ${i + 1} de ${count}...`);
+        }
+        
+        const baseImg = isRefining && generateState.results ? { data: generateState.results[generateState.resultIndex], mimeType: 'image/png' } : (generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined);
+        const results = await generateImageFromPrompt(currentPrompt, 1, aspectRatio, baseImg);
+        finalResults.push(results[0].base64);
+
+        if (count > 1 && i < count - 1) {
+          await new Promise(resolve => setTimeout(resolve, 800)); // Pequena pausa para UI
+        }
+      }
+
+      if (isRefining && generateState.results) {
+        const newResults = [...generateState.results];
+        newResults[generateState.resultIndex] = finalResults[0];
+        setGenerateState(prev => ({ ...prev, results: newResults }));
+      } else {
+        setGenerateState(prev => ({ ...prev, results: finalResults, resultIndex: 0 }));
+      }
+      setStatus('success');
+      setProcessingProgress('');
+    } catch (err: any) {
+      handleApiError(err);
+    }
   };
 
   const handleProcess = async (mode: RestorationMode) => {
@@ -273,80 +291,57 @@ export default function App() {
     setStatus('processing');
     setActiveMode(mode);
     setErrorMsg(null);
+    setIsQuotaError(false);
     try {
       const toolPrompt = RESTORATION_OPTIONS.find(o => o.id === mode)?.prompt || '';
-      const userContext = customPrompt.trim() ? `ADDITIONAL USER INSTRUCTION: ${customPrompt}. ` : '';
-      const faceDesc = preserveFacialTraits ? "CRITICAL: Do NOT alter facial features." : "Enhance facial details.";
-      const finalPrompt = `${userContext}${toolPrompt}. Strength: ${restorationStrength}%. ${faceDesc}`;
+      const userContext = customPrompt.trim() ? `ADICIONAL: ${customPrompt}. ` : '';
+      const finalPrompt = `${userContext}${toolPrompt}`;
       const result = await processImage(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel);
+      
       setImageState(prev => ({ 
         ...prev, 
         processedPreview: result.base64,
         history: [...prev.history, prev.originalPreview!],
         future: [] 
       }));
-      setImageDescription(result.description || null);
+      
       setHistory(prev => [{
         id: Date.now().toString(),
         original: imageState.originalPreview!,
         processed: result.base64,
-        mode: mode === 'custom' ? 'Manual' : (RESTORATION_OPTIONS.find(o => o.id === mode)?.label || mode),
+        mode: RESTORATION_OPTIONS.find(o => o.id === mode)?.label || 'Personalizado',
         timestamp: Date.now(),
-        genModel: result.model,
         description: result.description
       }, ...prev].slice(0, 8));
+      
       setStatus('success');
     } catch (err: any) {
-      setStatus('error');
-      if (err.message === "API Key") {
-        setErrorMsg("A chave de API não foi detectada no Vercel. Selecione uma chave para continuar.");
-        handleOpenKeySelector();
-      } else {
-        setErrorMsg(err.message || "Ocorreu um erro inesperado.");
-      }
+      handleApiError(err);
     }
-  };
-
-  const handleContinueEditing = () => {
-    if (!imageState.processedPreview) return;
-    setImageState(prev => ({
-      ...prev,
-      originalPreview: prev.processedPreview,
-      processedPreview: null,
-      history: [...prev.history, prev.originalPreview!],
-      future: []
-    }));
-    setImageDescription(null);
-    setStatus('idle');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleUndo = () => {
     if (imageState.history.length === 0) return;
-    const previousState = imageState.history[imageState.history.length - 1];
+    const last = imageState.history[imageState.history.length - 1];
     setImageState(prev => ({
       ...prev,
-      originalPreview: previousState,
+      originalPreview: last,
       processedPreview: null,
       future: [prev.originalPreview!, ...prev.future],
       history: prev.history.slice(0, -1)
     }));
-    setImageDescription(null);
-    setStatus('idle');
   };
 
   const handleRedo = () => {
     if (imageState.future.length === 0) return;
-    const nextState = imageState.future[0];
+    const next = imageState.future[0];
     setImageState(prev => ({
       ...prev,
-      originalPreview: nextState,
+      originalPreview: next,
       processedPreview: null,
       history: [...prev.history, prev.originalPreview!],
       future: prev.future.slice(1)
     }));
-    setImageDescription(null);
-    setStatus('idle');
   };
 
   const handleFullReset = () => {
@@ -356,6 +351,8 @@ export default function App() {
     setStatus('idle');
     setCustomPrompt('');
     setErrorMsg(null);
+    setIsQuotaError(false);
+    setProcessingProgress('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -374,8 +371,7 @@ export default function App() {
       <header className={`border-b ${isLight ? 'border-slate-200 bg-slate-50/95' : 'border-slate-800 bg-slate-900/50'} backdrop-blur-md sticky top-0 z-50 h-16 md:h-20 shadow-sm`}>
         <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
           <button className="flex items-center gap-2 md:gap-5 cursor-pointer group outline-none relative" onClick={handleFullReset}>
-            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-16 bg-yellow-500/10 blur-[40px] rounded-full opacity-40 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
-            <div className="relative w-9 h-9 md:w-11 md:h-11 overflow-hidden rounded-2xl border border-white/20 bg-slate-800 flex items-center justify-center z-10 shadow-[0_0_15px_rgba(234,179,8,0.2)] transition-all group-hover:shadow-[0_0_30px_rgba(234,179,8,0.5)] group-hover:scale-105">
+            <div className="relative w-9 h-9 md:w-11 md:h-11 overflow-hidden rounded-2xl border border-white/20 bg-slate-800 flex items-center justify-center z-10">
               <img src={LOGO_THUMBNAIL_URL} alt="Logo" className="w-full h-full object-cover" />
             </div>
             <div className="relative text-base xs:text-lg sm:text-xl md:text-2xl lg:text-3xl tracking-[0.25em] transition-all duration-300 flex items-center uppercase whitespace-nowrap z-10 select-none group-hover:scale-[1.02]">
@@ -411,15 +407,27 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {errorMsg && (
-          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-600 text-xs font-bold flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            <div className="flex-1">
-              <p>{errorMsg}</p>
-              {isKeyMissing && (
-                <button onClick={handleOpenKeySelector} className="mt-2 text-indigo-600 underline hover:text-indigo-500">Configurar chave agora</button>
-              )}
+          <div className={`mb-6 p-5 rounded-3xl border ${isQuotaError ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-600' : 'bg-red-500/10 border-red-500/30 text-red-600'} text-xs font-bold animate-in slide-in-from-top-4 shadow-xl`}>
+            <div className="flex items-center gap-4">
+              <div className={`p-2 rounded-full ${isQuotaError ? 'bg-yellow-500 text-slate-900' : 'bg-red-500 text-white'}`}>
+                {isQuotaError ? <CreditCard className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm uppercase tracking-soft mb-1">{isQuotaError ? 'Limite de Cota Excedido' : 'Erro de Processamento'}</p>
+                <p className="font-light opacity-90">{errorMsg}</p>
+                <div className="flex gap-4 mt-3">
+                   <button onClick={handleOpenKeySelector} className="text-indigo-600 font-bold underline hover:text-indigo-500 uppercase text-[10px] tracking-elegant flex items-center gap-1">
+                     <Key className="w-3 h-3" /> Configurar Chave Paga
+                   </button>
+                   {isQuotaError && (
+                     <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="text-slate-500 font-bold underline hover:text-slate-400 uppercase text-[10px] tracking-elegant flex items-center gap-1">
+                       <ExternalLink className="w-3 h-3" /> Ver Documentação de Faturamento
+                     </a>
+                   )}
+                </div>
+              </div>
+              <button onClick={() => setErrorMsg(null)} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5" /></button>
             </div>
-            <button onClick={() => setErrorMsg(null)} className="p-1 hover:bg-red-500/20 rounded-md"><X className="w-4 h-4" /></button>
           </div>
         )}
 
@@ -437,7 +445,7 @@ export default function App() {
             <div className="grid lg:grid-cols-3 gap-8 items-start">
               <div className="lg:col-span-2 space-y-6">
                 <div className={`${cardBg} rounded-3xl border p-2 min-h-[400px] flex items-center justify-center relative overflow-hidden transition-all shadow-2xl`}>
-                  {status === 'processing' && <LoaderOverlay />}
+                  {status === 'processing' && <LoaderOverlay progress={processingProgress} />}
                   {imageState.processedPreview ? (
                     <ImageComparator 
                       original={imageState.originalPreview} 
@@ -449,21 +457,18 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Ações após processamento */}
                 {imageState.processedPreview && (
                    <div className="flex gap-4 items-center justify-center animate-in fade-in slide-in-from-top-4 duration-300">
-                      <Button onClick={handleContinueEditing} className="h-12 px-8 uppercase text-xs tracking-elegant bg-yellow-500 hover:bg-yellow-400 text-slate-900 border-none" icon={ArrowRight}>Editar sobre este resultado</Button>
                       <Button onClick={() => handleDownloadImage(imageState.processedPreview)} variant="secondary" className="h-12 px-8 uppercase text-xs tracking-elegant" icon={Download}>Baixar Agora</Button>
                    </div>
                 )}
               </div>
               
               <div className="space-y-6">
-                {/* Painel de Contexto com Botão Integrado */}
                 <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
                    <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-elegant text-indigo-600">
-                         <MessageSquare className="w-3.5 h-3.5" /> Contexto Personalizado
+                         <MessageSquare className="w-3.5 h-3.5" /> Ajuste Manual
                       </div>
                       <div className="flex bg-slate-800/50 p-0.5 rounded-lg border border-slate-700">
                         <button onClick={handleUndo} disabled={imageState.history.length === 0} className="p-1.5 hover:bg-slate-700 rounded-md text-yellow-400 disabled:opacity-20 transition-all" title="Desfazer"><Undo2 className="w-3.5 h-3.5" /></button>
@@ -474,7 +479,7 @@ export default function App() {
                    <div className="relative group">
                      <textarea 
                        className={`w-full ${isLight ? 'bg-slate-50 text-slate-950 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium no-scrollbar`} 
-                       placeholder="Ex: 'Mantenha as roupas verdes' ou 'Não remova a cicatriz'..." 
+                       placeholder="Ex: 'Mantenha as roupas verdes'..." 
                        value={customPrompt} 
                        onChange={e => setCustomPrompt(e.target.value)} 
                      />
@@ -482,16 +487,14 @@ export default function App() {
                        onClick={() => handleProcess('custom')}
                        disabled={!customPrompt.trim() || status === 'processing'}
                        className="absolute right-2 bottom-2 p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-all shadow-lg disabled:opacity-50"
-                       title="Aplicar Ajuste Manual"
                      >
                        <Sparkles className="w-4 h-4" />
                      </button>
                    </div>
                 </div>
 
-                {/* Ferramentas de Restauração */}
                 <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
-                  <h2 className={`text-[10px] flex items-center gap-2 mb-6 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-3.5 h-3.5 text-indigo-600" /> Escolha o Método</h2>
+                  <h2 className={`text-[10px] flex items-center gap-2 mb-6 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-3.5 h-3.5 text-indigo-600" /> Métodos de Restauração</h2>
                   <div className="grid grid-cols-1 gap-2.5">
                     {RESTORATION_OPTIONS.map(opt => (
                       <ActionCard 
@@ -505,17 +508,12 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Assistente Compacto na Sidebar */}
                 <div className={`${cardBg} rounded-3xl border p-4 shadow-xl`}>
                    <div className="flex items-center gap-2 mb-3 text-[9px] uppercase font-bold text-slate-500">
-                      <Cpu className="w-3 h-3" /> Assistente
-                   </div>
-                   <div className={`p-3 rounded-2xl text-[10px] leading-relaxed mb-3 ${isLight ? 'bg-white text-slate-950 border border-slate-200' : 'bg-slate-950/50 text-slate-300 font-light'}`}>
-                      {status === 'processing' ? "Estou processando os pixels com cuidado..." : "Selecione uma ferramenta ou descreva o que deseja mudar na imagem."}
+                      <Cpu className="w-3 h-3" /> Sistema
                    </div>
                    <div className="flex gap-2">
-                      <Button onClick={handleFullReset} variant="ghost" className="flex-1 h-10 uppercase text-[9px] tracking-elegant border border-slate-700/30" icon={RotateCcw}>Limpar</Button>
-                      <Button onClick={() => setShowAbout(true)} variant="secondary" className="h-10 px-3" icon={Info}></Button>
+                      <Button onClick={handleFullReset} variant="ghost" className="flex-1 h-10 uppercase text-[9px] tracking-elegant border border-slate-700/30" icon={RotateCcw}>Limpar Tudo</Button>
                    </div>
                 </div>
               </div>
@@ -528,49 +526,72 @@ export default function App() {
             {activeTab === 'merge' ? (
                !mergeState.results ? (
                 <div className="space-y-8">
-                  <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Mescle <span className="text-yellow-500 font-normal">pessoas</span> e cenas.</h1>
-                  <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Combine o melhor de duas fotos em uma imagem unificada e realista.</p>
+                  <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Mescle <span className="text-yellow-500 font-normal">sujeitos</span>.</h1>
+                  <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Combine elementos de duas fotos em uma única imagem.</p>
                   <div className="grid grid-cols-2 gap-4">
                     <UploaderCompact label="Foto A" current={mergeState.imageA} onSelect={(f:any, b:any, m:any) => handleMergeImageSelect('A', f, b, m)} isLight={isLight} />
                     <UploaderCompact label="Foto B" current={mergeState.imageB} onSelect={(f:any, b:any, m:any) => handleMergeImageSelect('B', f, b, m)} isLight={isLight} />
                   </div>
                   <div className={`${cardBg} p-6 rounded-3xl border shadow-xl`}>
-                    <div className="flex justify-between items-center mb-4">
-                      <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Variações</p>
-                      <QuantitySelector count={mergeCount} onSelect={setMergeCount} options={[1, 2, 4]} />
-                    </div>
-                    <textarea className={`w-full ${isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-32 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium`} placeholder="Descreva a cena final..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
-                    <Button onClick={handleMergeAction} disabled={status === 'processing' || !mergeState.imageA || !mergeState.imageB || !customPrompt.trim()} className="w-full mt-4 h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Layers}>Gerar Mesclagem</Button>
+                    <textarea className={`w-full ${isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-32 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium`} placeholder="O que deseja mesclar?" value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
+                    <Button onClick={handleMergeAction} disabled={status === 'processing' || !mergeState.imageA || !mergeState.imageB || !customPrompt.trim()} className="w-full mt-4 h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Layers}>Gerar Resultado</Button>
                   </div>
                 </div>
                ) : (
-                <ResultsGallery results={mergeState.results} index={mergeState.resultIndex} onSelect={(idx:any) => setMergeState(p => ({...p, resultIndex: idx}))} onFullScreen={setFullScreenImage} navigate={navigateResults} cardBg={cardBg} status={status} onReset={() => setMergeState(p => ({...p, results: null}))} onDownload={() => handleDownloadImage(mergeState.results ? mergeState.results[mergeState.resultIndex] : null)} />
+                <ResultsGallery results={mergeState.results} index={mergeState.resultIndex} onSelect={(idx:any) => setMergeState(p => ({...p, resultIndex: idx}))} onFullScreen={setFullScreenImage} navigate={navigateResults} cardBg={cardBg} status={status} progress={processingProgress} onReset={() => setMergeState(p => ({...p, results: null}))} onDownload={() => handleDownloadImage(mergeState.results ? mergeState.results[mergeState.resultIndex] : null)} />
                )
             ) : (
               !generateState.results ? (
                 <div className="space-y-8">
-                  <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Crie novas <span className="text-yellow-500 font-normal">realidades</span>.</h1>
-                  <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Transforme texto em arte visual detalhada com o poder da IA generativa.</p>
+                  <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Crie <span className="text-yellow-500 font-normal">arte</span> pura.</h1>
+                  <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Transforme palavras em imagens detalhadas.</p>
+                  
                   <div className="flex items-center gap-4">
                      <div className="w-32 h-32 flex-shrink-0">
                        <UploaderCompact label="Base (Opcional)" current={generateState.baseImage} onSelect={handleGenerateImageSelect} isLight={isLight} />
                      </div>
                      <div className="flex-1">
                         <p className={`text-[10px] uppercase font-bold tracking-elegant mb-2 ${textSub}`}>Referência Visual</p>
-                        <p className={`text-[9px] leading-relaxed ${textSub} opacity-80`}>Use uma imagem como guia ou deixe o campo vazio para criar do zero.</p>
+                        <p className={`text-[9px] leading-relaxed ${textSub} opacity-80`}>Use uma imagem como guia ou deixe vazio para criação livre.</p>
                      </div>
                   </div>
-                  <div className={`${cardBg} p-6 rounded-3xl border shadow-xl`}>
-                    <div className="flex justify-between items-center mb-6">
-                      <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Variações</p>
-                      <QuantitySelector count={generateCount} onSelect={setGenerateCount} options={[1, 2, 4]} />
+
+                  <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-6`}>
+                    <div>
+                      <p className={`text-[10px] uppercase font-bold tracking-elegant mb-3 ${textSub}`}>Prompt de Criação</p>
+                      <textarea className={`w-full ${isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-40 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium no-scrollbar`} placeholder="O que deseja criar?" value={generateState.prompt} onChange={e => setGenerateState(p => ({...p, prompt: e.target.value}))} />
                     </div>
-                    <textarea className={`w-full ${isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-40 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium`} placeholder="Descreva o que você imagina..." value={generateState.prompt} onChange={e => setGenerateState(p => ({...p, prompt: e.target.value}))} />
-                    <Button onClick={() => handleGenerate()} disabled={status === 'processing' || !generateState.prompt.trim()} className="w-full mt-4 h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Sparkles}>Criar Imagens</Button>
+
+                    <div className="grid grid-cols-2 gap-6">
+                       <div>
+                          <p className={`text-[10px] uppercase font-bold tracking-elegant mb-3 ${textSub}`}>Quantidade</p>
+                          <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/40 border-slate-700'}`}>
+                            {[1, 2, 4].map((n) => (
+                              <button
+                                key={n}
+                                onClick={() => setGenerateCount(n)}
+                                className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${generateCount === n ? 'bg-indigo-600 text-white shadow-sm' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-400 hover:text-white'}`}
+                              >
+                                {n}x
+                              </button>
+                            ))}
+                          </div>
+                       </div>
+                       <div>
+                          <p className={`text-[10px] uppercase font-bold tracking-elegant mb-3 ${textSub}`}>Formato</p>
+                          <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/40 border-slate-700'}`}>
+                             <button onClick={() => setAspectRatio('1:1')} className={`flex-1 flex justify-center py-1.5 rounded-lg transition-all ${aspectRatio === '1:1' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`} title="Quadrado 1:1"><Square className="w-3.5 h-3.5" /></button>
+                             <button onClick={() => setAspectRatio('16:9')} className={`flex-1 flex justify-center py-1.5 rounded-lg transition-all ${aspectRatio === '16:9' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`} title="Widescreen 16:9"><RectangleHorizontal className="w-3.5 h-3.5" /></button>
+                             <button onClick={() => setAspectRatio('9:16')} className={`flex-1 flex justify-center py-1.5 rounded-lg transition-all ${aspectRatio === '9:16' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`} title="Retrato 9:16"><RectangleVertical className="w-3.5 h-3.5" /></button>
+                          </div>
+                       </div>
+                    </div>
+
+                    <Button onClick={() => handleGenerate()} disabled={status === 'processing' || !generateState.prompt.trim()} className="w-full h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Sparkles}>Criar Imagem</Button>
                   </div>
                 </div>
               ) : (
-                <ResultsGallery results={generateState.results} index={generateState.resultIndex} onSelect={(idx:any) => setGenerateState(p => ({...p, resultIndex: idx}))} onFullScreen={setFullScreenImage} navigate={navigateResults} cardBg={cardBg} status={status} onReset={() => setGenerateState(p => ({...p, results: null}))} onDownload={() => handleDownloadImage(generateState.results ? generateState.results[generateState.resultIndex] : null)} />
+                <ResultsGallery results={generateState.results} index={generateState.resultIndex} onSelect={(idx:any) => setGenerateState(p => ({...p, resultIndex: idx}))} onFullScreen={setFullScreenImage} navigate={navigateResults} cardBg={cardBg} status={status} progress={processingProgress} onReset={() => setGenerateState(p => ({...p, results: null}))} onDownload={() => handleDownloadImage(generateState.results ? generateState.results[generateState.resultIndex] : null)} />
               )
             )}
             <ChatAssistant messages={chatMessages} isLight={isLight} cardBg={cardBg} textMain={textMain} />
@@ -582,8 +603,6 @@ export default function App() {
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-4" onClick={() => setFullScreenImage(null)}>
           <button className="absolute top-6 right-6 p-3 text-white/50 hover:text-white transition-colors" onClick={() => setFullScreenImage(null)}><Minimize2 className="w-8 h-8" /></button>
           <div className="relative w-full h-full flex items-center justify-center" onClick={e => e.stopPropagation()}>
-            <button onClick={(e) => { e.stopPropagation(); navigateResults('prev'); }} className="absolute left-4 p-4 bg-white/10 hover:bg-yellow-400 hover:text-slate-900 rounded-full transition-all shadow-xl"><ChevronLeft className="w-10 h-10" /></button>
-            <button onClick={(e) => { e.stopPropagation(); navigateResults('next'); }} className="absolute right-4 p-4 bg-white/10 hover:bg-yellow-400 hover:text-slate-900 rounded-full transition-all shadow-xl"><ChevronRight className="w-10 h-10" /></button>
             <img src={fullScreenImage} className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" alt="Fullscreen" />
           </div>
         </div>
@@ -605,25 +624,19 @@ export default function App() {
         </div>
       </Modal>
 
-      <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="Histórico de Criações" isLight={isLight}>
+      <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="Histórico" isLight={isLight}>
         {history.length === 0 ? (
-          <div className="text-center py-12 opacity-40"><Clock className="w-12 h-12 mx-auto mb-4" /><p className="text-xs uppercase tracking-elegant">Sem histórico recente.</p></div>
+          <div className="text-center py-12 opacity-40"><Clock className="w-12 h-12 mx-auto mb-4" /><p className="text-xs uppercase tracking-elegant">Vazio.</p></div>
         ) : (
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 no-scrollbar">
             {history.map((item) => (
               <div key={item.id} className={`flex gap-4 p-3 ${isLight ? 'bg-white' : 'bg-slate-800/40'} rounded-2xl border ${isLight ? 'border-slate-200' : 'border-slate-700/50'} group`}>
                 <div className="w-20 h-20 flex-shrink-0 overflow-hidden rounded-xl"><img src={item.processed} className="w-full h-full object-cover" alt="History" /></div>
                 <div className="flex-1 flex flex-col justify-between py-1 overflow-hidden">
-                  <div>
-                    <div className="text-[10px] uppercase font-bold text-indigo-600 mb-1 flex items-center justify-between">{item.mode} <span className="text-[8px] opacity-40">{new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
-                    <div className={`text-[9px] line-clamp-2 italic truncate ${isLight ? 'text-slate-950 font-bold' : 'text-slate-300'}`}>{item.description || 'Restauração de imagem.'}</div>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-[8px] opacity-40">{new Date(item.timestamp).toLocaleDateString()}</span>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleDownloadImage(item.processed)} className="p-1.5 hover:bg-indigo-600 rounded-lg transition-colors text-slate-400 hover:text-white"><Download className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => setHistory(h => h.filter(x => x.id !== item.id))} className="p-1.5 hover:bg-red-600 rounded-lg transition-colors text-slate-400 hover:text-white"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </div>
+                  <div className="text-[10px] uppercase font-bold text-indigo-600 mb-1">{item.mode}</div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleDownloadImage(item.processed)} className="p-1.5 hover:bg-indigo-600 rounded-lg transition-colors text-slate-400 hover:text-white"><Download className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setHistory(h => h.filter(x => x.id !== item.id))} className="p-1.5 hover:bg-red-600 rounded-lg transition-colors text-slate-400 hover:text-white"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 </div>
               </div>
@@ -635,48 +648,18 @@ export default function App() {
       <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} title="Configurações" isLight={isLight}>
         <div className="space-y-8">
           <section>
-            <h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600 mb-4">Chave de API (GCP)</h3>
-            <div className={`p-4 rounded-2xl border ${isLight ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'} mb-4`}>
-              <div className="flex items-center justify-between mb-3">
-                 <span className="text-[10px] uppercase font-bold opacity-60">Status</span>
-                 {isKeyMissing ? (
-                   <span className="text-[9px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full font-bold">Pendente</span>
-                 ) : (
-                   <span className="text-[9px] bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full font-bold">Configurada</span>
-                 )}
-              </div>
-              <p className="text-[9px] text-slate-500 leading-relaxed mb-4">Para funcionar no Vercel sem chaves de ambiente, selecione uma chave paga do seu projeto GCP.</p>
-              <Button onClick={handleOpenKeySelector} className="w-full h-10 text-[10px] uppercase tracking-elegant" icon={Key}>Selecionar Chave</Button>
-              <a 
-                href="https://ai.google.dev/gemini-api/docs/billing" 
-                target="_blank" 
-                rel="noreferrer" 
-                className="mt-3 flex items-center justify-center gap-1.5 text-[8px] uppercase font-bold text-indigo-600 hover:underline"
-              >
-                Docs de Faturamento <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            </div>
-          </section>
-
-          <section>
             <h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600 mb-4">Aparência</h3>
             <div className="flex bg-slate-800/10 p-1 rounded-xl border border-slate-400/20">
-              <button onClick={() => setSettings(s => ({...s, theme: 'dark'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all font-bold ${!isLight ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}><Moon className="w-3 h-3" /> Dark</button>
-              <button onClick={() => setSettings(s => ({...s, theme: 'light'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all font-bold ${isLight ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}><Sun className="w-3 h-3" /> Light</button>
+              <button onClick={() => setSettings(s => ({...s, theme: 'dark'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all font-bold ${!isLight ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}><Moon className="w-3 h-3" /> Dark</button>
+              <button onClick={() => setSettings(s => ({...s, theme: 'light'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all font-bold ${isLight ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}><Sun className="w-3 h-3" /> Light</button>
             </div>
           </section>
           <section>
-            <div className="flex items-center justify-between mb-4"><h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600">Motor de IA</h3></div>
-            <div className="grid gap-2">
-              {[
-                { id: 'gemini-2.5-flash-image', name: 'Gemini 2.5 Flash', desc: 'Opção padrão (gratuita/incluída)' },
-                { id: 'gemini-3-pro-image-preview', name: 'Gemini 3 Pro', desc: 'Qualidade Premium (requer faturamento)' }
-              ].map(m => (
-                <button key={m.id} onClick={() => setSettings(s => ({...s, preferredModel: m.id}))} className={`flex items-center justify-between p-4 rounded-2xl border text-left transition-all ${settings.preferredModel === m.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800/5 border-slate-400/20 text-slate-600 hover:border-indigo-400'}`}>
-                  <div className="overflow-hidden"><div className="text-[11px] uppercase font-bold truncate">{m.name}</div><div className="text-[9px] opacity-60 truncate font-medium">{m.desc}</div></div>
-                  {settings.preferredModel === m.id && <UserCheck className="w-4 h-4 shrink-0 ml-3" />}
-                </button>
-              ))}
+            <h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600 mb-4">API Key</h3>
+            <div className="p-4 rounded-xl border border-dashed border-slate-700">
+               <p className="text-[9px] text-slate-400 mb-3 uppercase tracking-soft">Configuração de chave de projeto pago ou novo para evitar erros de cota.</p>
+               <Button onClick={handleOpenKeySelector} className="w-full h-10 text-xs" icon={Key}>Configurar Nova Chave</Button>
+               <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="mt-2 block text-[8px] text-center text-indigo-400 hover:underline">Documentação de Faturamento</a>
             </div>
           </section>
         </div>
@@ -719,11 +702,12 @@ function Modal({ isOpen, onClose, title, children, isLight }: any) {
   );
 }
 
-function ResultsGallery({ results, index, onSelect, onFullScreen, navigate, cardBg, status, onReset, onDownload }: any) {
+// Fixed: Added 'progress' to props and passed it to LoaderOverlay to fix the missing variable error
+function ResultsGallery({ results, index, onSelect, onFullScreen, navigate, cardBg, status, onReset, onDownload, progress }: any) {
   if (!results || results.length === 0) return null;
   return (
     <div className={`${cardBg} rounded-3xl border p-4 relative overflow-hidden flex flex-col items-center justify-center min-h-[500px] shadow-2xl transition-all`}>
-      {status === 'processing' && <LoaderOverlay />}
+      {status === 'processing' && <LoaderOverlay progress={progress} />}
       <div className="w-full mb-4 flex justify-between items-center px-2">
         <p className="text-[10px] uppercase font-bold tracking-elegant text-indigo-600">Resultados</p>
         <div className="flex gap-4">
@@ -732,13 +716,7 @@ function ResultsGallery({ results, index, onSelect, onFullScreen, navigate, card
         </div>
       </div>
       <div className="relative w-full flex items-center justify-center">
-        {results.length > 1 && (
-          <>
-            <button onClick={(e) => { e.stopPropagation(); navigate('prev'); }} className="absolute -left-2 z-10 p-2 bg-black/40 hover:bg-yellow-400 hover:text-slate-900 rounded-full transition-colors shadow-lg"><ChevronLeft /></button>
-            <button onClick={(e) => { e.stopPropagation(); navigate('next'); }} className="absolute -right-2 z-10 p-2 bg-black/40 hover:bg-yellow-400 hover:text-slate-900 rounded-full transition-colors shadow-lg"><ChevronRight /></button>
-          </>
-        )}
-        <div className={`grid gap-4 w-full ${results.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className={`grid gap-4 w-full ${results.length > 2 ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-2'} ${results.length === 1 ? 'max-w-md' : ''}`}>
           {results.map((res: string, idx: number) => (
             <div key={idx} onClick={() => onSelect(idx)} className={`relative rounded-xl overflow-hidden border-2 transition-all cursor-pointer group ${index === idx ? 'border-indigo-600 shadow-lg' : 'border-transparent opacity-60 hover:opacity-100'}`}>
               <img src={res} className="w-full aspect-square object-cover" alt={`Variação ${idx + 1}`} />
@@ -751,19 +729,19 @@ function ResultsGallery({ results, index, onSelect, onFullScreen, navigate, card
   );
 }
 
-function QuantitySelector({ count, onSelect, options }: any) {
-  return (
-    <div className="flex bg-slate-950/10 p-1 rounded-lg border border-slate-400/20 backdrop-blur-md">
-      {options.map((n: number) => ( <button key={n} onClick={() => onSelect(n)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${count === n ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}>{n}x</button> ))}
-    </div>
-  );
-}
-
-function LoaderOverlay() {
+function LoaderOverlay({ progress }: { progress?: string }) {
   return (
     <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
-      <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-6"></div>
-      <p className="text-xl font-bold uppercase tracking-elegant text-white animate-pulse">Refazendo Histórias...</p>
+      <div className="relative mb-6">
+        <div className="w-20 h-20 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin"></div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-indigo-600 animate-pulse" />
+        </div>
+      </div>
+      <p className="text-xl font-bold uppercase tracking-elegant text-white mb-2">Processando Pixels...</p>
+      {progress && (
+        <p className="text-[10px] uppercase tracking-widest text-indigo-400 animate-pulse font-bold">{progress}</p>
+      )}
     </div>
   );
 }
@@ -772,7 +750,7 @@ function ChatAssistant({ messages, cardBg, isLight }: any) {
   return (
     <div className={`${cardBg} rounded-[2.5rem] border h-[500px] flex flex-col overflow-hidden shadow-xl`}>
       <div className={`p-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'} flex items-center justify-between bg-black/5`}>
-        <span className={`text-[10px] font-bold uppercase tracking-elegant opacity-60 ${isLight ? 'text-slate-950' : 'text-white'}`}>Assistente Virtual</span>
+        <span className={`text-[10px] font-bold uppercase tracking-elegant opacity-60 ${isLight ? 'text-slate-950' : 'text-white'}`}>Assistente</span>
         <MessageSquare className="w-4 h-4 text-indigo-600" />
       </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">

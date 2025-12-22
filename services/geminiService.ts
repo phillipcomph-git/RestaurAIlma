@@ -10,21 +10,35 @@ const cleanBase64 = (base64Str: string) => {
   return base64Str;
 };
 
-// Função auxiliar para inicializar a IA com segurança
+/**
+ * Helper para realizar retentativas em caso de erro 429 (Rate Limit).
+ * Aumentamos o delay para dar tempo da cota resetar.
+ */
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 3000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const isQuotaError = error.status === 429 || 
+                         error.message?.includes("429") || 
+                         error.message?.includes("quota") ||
+                         error.message?.includes("limit");
+
+    if (retries > 0 && isQuotaError) {
+      console.warn(`Limite de cota atingido. Tentando novamente em ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+}
+
+// Sempre cria uma nova instância para garantir que use a chave mais atual do ambiente/localStorage
 const getAIInstance = () => {
-  // Tenta obter do process.env (injetado pelo Vercel/Build)
-  const apiKey = process.env.API_KEY || "";
-  
-  // Se não houver chave no ambiente, lançamos o erro "API Key" 
-  // que o App.tsx interceptará para abrir o seletor visual
-  if (!apiKey || apiKey === "undefined" || apiKey === "") {
-    throw new Error("API Key");
+  const apiKey = process.env.API_KEY;
+  if (!apiKey || apiKey === "undefined") {
+    throw new Error("API_KEY_MISSING");
   }
   return new GoogleGenAI({ apiKey });
-};
-
-export const getAvailableModels = async (): Promise<string[]> => {
-  return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
 };
 
 export const processImage = async (
@@ -33,56 +47,60 @@ export const processImage = async (
   promptInstruction: string,
   modelPreference: string = 'gemini-2.5-flash-image'
 ): Promise<ProcessResult> => {
-  const ai = getAIInstance();
-  const modelId = modelPreference;
-  
-  const systemInstruction = `
-    You are a world-class AI specialized in photographic restoration and enhancement.
-    CRITICAL RULES:
-    1. IDENTITY: Keep facial features and historical identity exactly as they are. No distortions.
-    2. RESTORATION: Remove scratches, noise, cracks, and blur.
-    3. COLOR: If the photo is old or B&W, provide realistic, natural colorization.
-    4. OUTPUT FORMAT: Return the processed image.
-  `;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: {
-        parts: [
-          { inlineData: { mimeType, data: cleanBase64(base64Image) } },
-          { text: `Task: ${promptInstruction}. Perform high-quality restoration.` }
-        ]
-      },
-      config: {
-        systemInstruction,
-        temperature: 0.1,
-        imageConfig: { aspectRatio: "1:1" },
-      }
-    });
-
-    const candidates = response.candidates;
-    if (!candidates || candidates.length === 0) {
-      throw new Error("A IA não retornou resultados devido a filtros de segurança.");
-    }
-
-    const parts = candidates[0].content?.parts;
-    const imagePart = parts?.find(p => p.inlineData);
-    const textPart = parts?.find(p => p.text);
-
-    if (imagePart?.inlineData?.data) {
-      return {
-        base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
-        model: modelId,
-        description: textPart?.text?.trim() || "Restauração concluída."
-      };
-    }
+  return withRetry(async () => {
+    const ai = getAIInstance();
+    const modelId = modelPreference;
     
-    throw new Error("Falha ao gerar dados da imagem.");
-  } catch (error: any) {
-    if (error.message === "API Key") throw error;
-    throw new Error(error.message || "Erro na comunicação com a API Gemini.");
-  }
+    const systemInstruction = `
+      Você é uma IA de elite especializada em restauração fotográfica.
+      REGRAS CRÍTICAS:
+      1. IDENTIDADE: Mantenha as feições faciais e identidade histórica intactas. Sem distorções.
+      2. RESTAURAÇÃO: Remova riscos, ruídos, rachaduras e borrões.
+      3. COR: Se a foto for P&B, aplique colorização natural e realista.
+      4. SAÍDA: Retorne a imagem processada com a maior fidelidade possível.
+    `;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: modelId,
+        contents: {
+          parts: [
+            { inlineData: { mimeType, data: cleanBase64(base64Image) } },
+            { text: `Tarefa: ${promptInstruction}. Realize restauração de alta qualidade.` }
+          ]
+        },
+        config: {
+          systemInstruction,
+          temperature: 0.1,
+          imageConfig: { aspectRatio: "1:1" },
+        }
+      });
+
+      const candidates = response.candidates;
+      if (!candidates || candidates.length === 0) {
+        throw new Error("A IA não pôde gerar um resultado para esta imagem por motivos de segurança.");
+      }
+
+      const parts = candidates[0].content?.parts;
+      const imagePart = parts?.find(p => p.inlineData);
+      const textPart = parts?.find(p => p.text);
+
+      if (imagePart?.inlineData?.data) {
+        return {
+          base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
+          model: modelId,
+          description: textPart?.text?.trim() || "Restauração concluída."
+        };
+      }
+      
+      throw new Error("Falha ao extrair imagem da resposta da API.");
+    } catch (error: any) {
+      if (error.message?.includes("Requested entity was not found")) {
+        throw new Error("API_KEY_INVALID");
+      }
+      throw error;
+    }
+  });
 };
 
 export const generateImageFromPrompt = async (
@@ -91,29 +109,29 @@ export const generateImageFromPrompt = async (
   aspectRatio: string = "1:1",
   baseImage?: { data: string, mimeType: string }
 ): Promise<ProcessResult[]> => {
-  const ai = getAIInstance();
-  const modelId = 'gemini-2.5-flash-image';
+  const results: ProcessResult[] = [];
+  
+  for (let i = 0; i < count; i++) {
+    const result = await withRetry(async () => {
+      const ai = getAIInstance();
+      const modelId = 'gemini-2.5-flash-image';
 
-  try {
-    const requests = Array.from({ length: count }).map((_, i) => {
       const parts: any[] = [{ text: `Prompt: ${prompt}` }];
       if (baseImage) parts.push({ inlineData: { mimeType: baseImage.mimeType, data: cleanBase64(baseImage.data) } });
 
-      return ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: modelId,
         contents: { parts },
         config: {
-          systemInstruction: "Generate a photorealistic high-detail image based on the prompt.",
+          systemInstruction: "Gere uma imagem fotorrealista com alto nível de detalhe baseada no prompt.",
           temperature: 0.7 + (i * 0.1),
           imageConfig: { aspectRatio: aspectRatio as any }
         }
       });
-    });
 
-    const responses = await Promise.all(requests);
-    return responses.map(response => {
-      const parts = response.candidates?.[0]?.content?.parts;
-      const imagePart = parts?.find(p => p.inlineData);
+      const candidateParts = response.candidates?.[0]?.content?.parts;
+      const imagePart = candidateParts?.find(p => p.inlineData);
+      
       if (imagePart?.inlineData?.data) {
         return {
           base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
@@ -123,10 +141,15 @@ export const generateImageFromPrompt = async (
       }
       throw new Error("Falha na geração.");
     });
-  } catch (error: any) {
-    if (error.message === "API Key") throw error;
-    throw error;
+    
+    results.push(result);
+    // Intervalo maior entre imagens para evitar 429 em planos gratuitos se o usuário ainda estiver usando um
+    if (count > 1 && i < count - 1) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
   }
+  
+  return results;
 };
 
 export const mergeImages = async (
@@ -137,32 +160,32 @@ export const mergeImages = async (
   instruction: string,
   count: number = 1
 ): Promise<ProcessResult[]> => {
-  const ai = getAIInstance();
-  const modelId = 'gemini-2.5-flash-image';
+  const results: ProcessResult[] = [];
 
-  try {
-    const requests = Array.from({ length: count }).map((_, i) => {
-      return ai.models.generateContent({
+  for (let i = 0; i < count; i++) {
+    const result = await withRetry(async () => {
+      const ai = getAIInstance();
+      const modelId = 'gemini-2.5-flash-image';
+
+      const response = await ai.models.generateContent({
         model: modelId,
         contents: {
           parts: [
             { inlineData: { mimeType: mimeA, data: cleanBase64(imageA) } },
             { inlineData: { mimeType: mimeB, data: cleanBase64(imageB) } },
-            { text: `Instruction: ${instruction}` }
+            { text: `Instrução: ${instruction}` }
           ]
         },
         config: {
-          systemInstruction: "Merge subjects from both photos into a single realistic scene.",
+          systemInstruction: "Mescle os sujeitos de ambas as fotos em uma única cena realista.",
           temperature: 0.5, 
           imageConfig: { aspectRatio: "1:1" }
         }
       });
-    });
 
-    const responses = await Promise.all(requests);
-    return responses.map(response => {
-      const parts = response.candidates?.[0]?.content?.parts;
-      const imagePart = parts?.find(p => p.inlineData);
+      const candidateParts = response.candidates?.[0]?.content?.parts;
+      const imagePart = candidateParts?.find(p => p.inlineData);
+      
       if (imagePart?.inlineData?.data) {
         return {
           base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
@@ -172,8 +195,12 @@ export const mergeImages = async (
       }
       throw new Error("Falha na mesclagem.");
     });
-  } catch (error: any) {
-    if (error.message === "API Key") throw error;
-    throw error;
+
+    results.push(result);
+    if (count > 1 && i < count - 1) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
   }
+
+  return results;
 };

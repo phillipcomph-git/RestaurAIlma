@@ -12,7 +12,7 @@ import {
 import { Uploader } from './components/Uploader';
 import { ImageComparator } from './components/ImageComparator';
 import { Button } from './components/Button';
-import { processImage, mergeImages, generateImageFromPrompt } from './services/geminiService';
+import { useImageProcessing } from './src/hooks/useImageProcessing';
 import { ImageState, MergeState, AppTab, ProcessingStatus, RestorationMode, ActionOption, HistoryItem, AppSettings, GenerateState } from './types';
 
 const RESTORATION_OPTIONS: ActionOption[] = [
@@ -101,6 +101,15 @@ const safeStorage = {
 };
 
 export default function App() {
+  const { processImage: apiProcessImage, isLoading, error: apiError } = useImageProcessing({
+    onSuccess: (result) => {
+      console.log('Imagem processada com sucesso');
+    },
+    onError: (err) => {
+      console.error('Erro ao processar:', err);
+    },
+  });
+
   const [activeTab, setActiveTab] = useState<AppTab>('restore');
   const [imageState, setImageState] = useState<ImageState>({
     file: null, originalPreview: null, processedPreview: null, mimeType: '', history: [], future: []
@@ -160,11 +169,11 @@ export default function App() {
       const toolPrompt = RESTORATION_OPTIONS.find(o => o.id === mode)?.prompt || '';
       const userContext = customPrompt.trim() ? `ADICIONAL: ${customPrompt}. ` : '';
       const finalPrompt = `${userContext}${toolPrompt}`;
-      const result = await processImage(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel);
+      const result = await apiProcessImage(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel);
       
       setImageState(prev => ({ 
         ...prev, 
-        processedPreview: result.base64,
+        processedPreview: `data:image/png;base64,${result.base64}`,
         history: [...prev.history, prev.originalPreview!],
         future: [] 
       }));
@@ -172,7 +181,7 @@ export default function App() {
       setHistory(prev => [{
         id: Date.now().toString(),
         original: imageState.originalPreview!,
-        processed: result.base64,
+        processed: `data:image/png;base64,${result.base64}`,
         mode: RESTORATION_OPTIONS.find(o => o.id === mode)?.label || 'Personalizado',
         timestamp: Date.now(),
         description: result.description

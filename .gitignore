@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment variables - NUNCA commite arquivos .env com valores reais!
+.env
+.env.local
+.env.*.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

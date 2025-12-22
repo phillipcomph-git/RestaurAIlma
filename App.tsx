@@ -102,7 +102,6 @@ const safeStorage = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('restore');
-  const [isKeyMissing, setIsKeyMissing] = useState(false);
   const [imageState, setImageState] = useState<ImageState>({
     file: null, originalPreview: null, processedPreview: null, mimeType: '', history: [], future: []
   });
@@ -110,14 +109,11 @@ export default function App() {
   const [mergeState, setMergeState] = useState<MergeState>({
     imageA: null, imageB: null, mimeTypeA: '', mimeTypeB: '', results: null, resultIndex: 0
   });
-  const [mergeCount, setMergeCount] = useState(1);
   const [status, setStatus] = useState<ProcessingStatus>('idle');
   const [processingProgress, setProcessingProgress] = useState<string>('');
   const [activeMode, setActiveMode] = useState<RestorationMode | null>(null);
-  const [imageDescription, setImageDescription] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isQuotaError, setIsQuotaError] = useState(false);
   
   const [generateState, setGenerateState] = useState<GenerateState>({
     prompt: '', baseImage: null, baseMimeType: null, results: null, resultIndex: 0
@@ -143,38 +139,10 @@ export default function App() {
 
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
-  useEffect(() => {
-    const checkKeyStatus = async () => {
-      const hasKey = typeof window !== 'undefined' && (window as any).aistudio && await (window as any).aistudio.hasSelectedApiKey();
-      setIsKeyMissing(!process.env.API_KEY && !hasKey);
-    };
-    checkKeyStatus();
-  }, []);
-
-  const handleOpenKeySelector = async () => {
-    if (typeof window !== 'undefined' && (window as any).aistudio) {
-      await (window as any).aistudio.openSelectKey();
-      setIsKeyMissing(false);
-      setErrorMsg(null);
-      setIsQuotaError(false);
-    }
-  };
-
   const handleApiError = (err: any) => {
     setStatus('error');
     setProcessingProgress('');
-    const errorString = err.message || "";
-    const quotaExceeded = err.status === 429 || errorString.includes("429") || errorString.includes("quota") || errorString.includes("limit");
-
-    if (err.message === "API_KEY_MISSING" || err.message === "API_KEY_INVALID") {
-      setErrorMsg("A chave de API não foi detectada ou é inválida. Clique para configurar.");
-      handleOpenKeySelector();
-    } else if (quotaExceeded) {
-      setIsQuotaError(true);
-      setErrorMsg("Limite de cota atingido (Erro 429). Chaves gratuitas têm limites baixos. Recomenda-se usar uma chave de conta com FATURAMENTO ATIVADO (Pay-as-you-go) para uso ilimitado.");
-    } else {
-      setErrorMsg(err.message || "Ocorreu um erro inesperado.");
-    }
+    setErrorMsg(err.message || "Ocorreu um erro inesperado no processamento.");
   };
 
   const navigateResults = useCallback((direction: 'next' | 'prev') => {
@@ -208,10 +176,8 @@ export default function App() {
 
   const handleImageSelect = (file: File, base64: string, mimeType: string) => {
     setImageState({ file, originalPreview: base64, processedPreview: null, mimeType, history: [], future: [] });
-    setImageDescription(null);
     setStatus('idle');
     setErrorMsg(null);
-    setIsQuotaError(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -222,14 +188,12 @@ export default function App() {
       setMergeState(prev => ({ ...prev, imageB: base64, mimeTypeB: mimeType }));
     }
     setErrorMsg(null);
-    setIsQuotaError(false);
     setStatus('idle');
   };
 
   const handleGenerateImageSelect = (file: File, base64: string, mimeType: string) => {
     setGenerateState(prev => ({ ...prev, baseImage: base64, baseMimeType: mimeType }));
     setErrorMsg(null);
-    setIsQuotaError(false);
     setStatus('idle');
   };
 
@@ -237,9 +201,8 @@ export default function App() {
     if (!mergeState.imageA || !mergeState.imageB || !customPrompt.trim()) return;
     setStatus('processing');
     setErrorMsg(null);
-    setIsQuotaError(false);
     try {
-      const results = await mergeImages(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt, mergeCount);
+      const results = await mergeImages(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt);
       setMergeState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
       setStatus('success');
     } catch (err: any) {
@@ -252,35 +215,20 @@ export default function App() {
     if (!currentPrompt.trim()) return;
     setStatus('processing');
     setErrorMsg(null);
-    setIsQuotaError(false);
     
     const count = isRefining ? 1 : generateCount;
-    const finalResults: string[] = [];
-
     try {
-      for (let i = 0; i < count; i++) {
-        if (count > 1) {
-          setProcessingProgress(`Gerando imagem ${i + 1} de ${count}...`);
-        }
-        
-        const baseImg = isRefining && generateState.results ? { data: generateState.results[generateState.resultIndex], mimeType: 'image/png' } : (generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined);
-        const results = await generateImageFromPrompt(currentPrompt, 1, aspectRatio, baseImg);
-        finalResults.push(results[0].base64);
-
-        if (count > 1 && i < count - 1) {
-          await new Promise(resolve => setTimeout(resolve, 800)); // Pequena pausa para UI
-        }
-      }
-
+      const baseImg = isRefining && generateState.results ? { data: generateState.results[generateState.resultIndex], mimeType: 'image/png' } : (generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined);
+      const results = await generateImageFromPrompt(currentPrompt, count, aspectRatio, baseImg);
+      
       if (isRefining && generateState.results) {
         const newResults = [...generateState.results];
-        newResults[generateState.resultIndex] = finalResults[0];
+        newResults[generateState.resultIndex] = results[0].base64;
         setGenerateState(prev => ({ ...prev, results: newResults }));
       } else {
-        setGenerateState(prev => ({ ...prev, results: finalResults, resultIndex: 0 }));
+        setGenerateState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
       }
       setStatus('success');
-      setProcessingProgress('');
     } catch (err: any) {
       handleApiError(err);
     }
@@ -291,7 +239,6 @@ export default function App() {
     setStatus('processing');
     setActiveMode(mode);
     setErrorMsg(null);
-    setIsQuotaError(false);
     try {
       const toolPrompt = RESTORATION_OPTIONS.find(o => o.id === mode)?.prompt || '';
       const userContext = customPrompt.trim() ? `ADICIONAL: ${customPrompt}. ` : '';
@@ -312,7 +259,7 @@ export default function App() {
         mode: RESTORATION_OPTIONS.find(o => o.id === mode)?.label || 'Personalizado',
         timestamp: Date.now(),
         description: result.description
-      }, ...prev].slice(0, 8));
+      }, ...prev].slice(0, 15));
       
       setStatus('success');
     } catch (err: any) {
@@ -351,8 +298,6 @@ export default function App() {
     setStatus('idle');
     setCustomPrompt('');
     setErrorMsg(null);
-    setIsQuotaError(false);
-    setProcessingProgress('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -389,15 +334,6 @@ export default function App() {
           </nav>
 
           <div className="flex items-center gap-2">
-            {isKeyMissing && (
-              <button 
-                onClick={handleOpenKeySelector} 
-                className="p-2 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-full border border-yellow-500/30 animate-pulse text-yellow-500 transition-colors"
-                title="Configurar Chave API"
-              >
-                <Key className="w-5 h-5" />
-              </button>
-            )}
             <button onClick={() => setShowAbout(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Sobre"><Info className="w-5 h-5" /></button>
             <button onClick={() => setShowHistory(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Histórico"><History className="w-5 h-5" /></button>
             <button onClick={() => setShowSettings(true)} className={`p-2 transition-colors ${utilityIconColor}`} title="Configurações"><Settings className="w-5 h-5" /></button>
@@ -407,24 +343,14 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {errorMsg && (
-          <div className={`mb-6 p-5 rounded-3xl border ${isQuotaError ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-600' : 'bg-red-500/10 border-red-500/30 text-red-600'} text-xs font-bold animate-in slide-in-from-top-4 shadow-xl`}>
+          <div className={`mb-6 p-5 rounded-3xl border bg-red-500/10 border-red-500/30 text-red-600 text-xs font-bold animate-in slide-in-from-top-4 shadow-xl`}>
             <div className="flex items-center gap-4">
-              <div className={`p-2 rounded-full ${isQuotaError ? 'bg-yellow-500 text-slate-900' : 'bg-red-500 text-white'}`}>
-                {isQuotaError ? <CreditCard className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              <div className="p-2 rounded-full bg-red-500 text-white">
+                <AlertCircle className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <p className="text-sm uppercase tracking-soft mb-1">{isQuotaError ? 'Limite de Cota Excedido' : 'Erro de Processamento'}</p>
+                <p className="text-sm uppercase tracking-soft mb-1">Erro de Processamento</p>
                 <p className="font-light opacity-90">{errorMsg}</p>
-                <div className="flex gap-4 mt-3">
-                   <button onClick={handleOpenKeySelector} className="text-indigo-600 font-bold underline hover:text-indigo-500 uppercase text-[10px] tracking-elegant flex items-center gap-1">
-                     <Key className="w-3 h-3" /> Configurar Chave Paga
-                   </button>
-                   {isQuotaError && (
-                     <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="text-slate-500 font-bold underline hover:text-slate-400 uppercase text-[10px] tracking-elegant flex items-center gap-1">
-                       <ExternalLink className="w-3 h-3" /> Ver Documentação de Faturamento
-                     </a>
-                   )}
-                </div>
               </div>
               <button onClick={() => setErrorMsg(null)} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5" /></button>
             </div>
@@ -654,14 +580,6 @@ export default function App() {
               <button onClick={() => setSettings(s => ({...s, theme: 'light'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs transition-all font-bold ${isLight ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}><Sun className="w-3 h-3" /> Light</button>
             </div>
           </section>
-          <section>
-            <h3 className="text-[10px] uppercase tracking-elegant font-bold text-indigo-600 mb-4">API Key</h3>
-            <div className="p-4 rounded-xl border border-dashed border-slate-700">
-               <p className="text-[9px] text-slate-400 mb-3 uppercase tracking-soft">Configuração de chave de projeto pago ou novo para evitar erros de cota.</p>
-               <Button onClick={handleOpenKeySelector} className="w-full h-10 text-xs" icon={Key}>Configurar Nova Chave</Button>
-               <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noreferrer" className="mt-2 block text-[8px] text-center text-indigo-400 hover:underline">Documentação de Faturamento</a>
-            </div>
-          </section>
         </div>
       </Modal>
     </div>
@@ -702,7 +620,6 @@ function Modal({ isOpen, onClose, title, children, isLight }: any) {
   );
 }
 
-// Fixed: Added 'progress' to props and passed it to LoaderOverlay to fix the missing variable error
 function ResultsGallery({ results, index, onSelect, onFullScreen, navigate, cardBg, status, onReset, onDownload, progress }: any) {
   if (!results || results.length === 0) return null;
   return (

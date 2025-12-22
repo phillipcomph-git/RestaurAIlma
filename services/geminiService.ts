@@ -14,18 +14,40 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 3000): Pr
   try {
     return await fn();
   } catch (error: any) {
+    // Log detalhado para depuração no Vercel
+    console.error("RestaurAIlma: Erro na chamada da API:", {
+      message: error.message,
+      status: error.status,
+      details: error
+    });
+    
     const isQuotaError = error.status === 429 || 
                          error.message?.includes("429") || 
                          error.message?.includes("quota") ||
                          error.message?.includes("limit");
 
     if (retries > 0 && isQuotaError) {
+      console.warn(`RestaurAIlma: Erro de cota (429). Tentando novamente em ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return withRetry(fn, retries - 1, delay * 2);
     }
     throw error;
   }
 }
+
+/**
+ * Inicializa o cliente garantindo que a chave de API esteja presente.
+ * No Vercel, se o build não injetar o process.env, este erro será disparado.
+ */
+const getAIClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    const errorMsg = "API_KEY não encontrada no ambiente. Certifique-se de que a variável de ambiente está configurada no Vercel e que o build a injetou corretamente.";
+    console.error("RestaurAIlma: " + errorMsg);
+    throw new Error(errorMsg);
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 export const processImage = async (
   base64Image: string,
@@ -34,8 +56,7 @@ export const processImage = async (
   modelPreference: string = 'gemini-2.5-flash-image'
 ): Promise<ProcessResult> => {
   return withRetry(async () => {
-    // Inicializa com a chave de ambiente conforme diretrizes
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getAIClient();
     
     const response = await ai.models.generateContent({
       model: modelPreference,
@@ -54,7 +75,7 @@ export const processImage = async (
 
     const candidates = response.candidates;
     if (!candidates || candidates.length === 0) {
-      throw new Error("A IA não retornou resultados.");
+      throw new Error("A IA não retornou resultados válidos.");
     }
 
     const parts = candidates[0].content?.parts;
@@ -69,7 +90,7 @@ export const processImage = async (
       };
     }
     
-    throw new Error("A IA não gerou uma nova imagem.");
+    throw new Error("A IA respondeu, mas não gerou uma nova imagem.");
   });
 };
 
@@ -80,7 +101,7 @@ export const generateImageFromPrompt = async (
   baseImage?: { data: string, mimeType: string }
 ): Promise<ProcessResult[]> => {
   const results: ProcessResult[] = [];
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAIClient();
   const modelId = 'gemini-2.5-flash-image';
   
   for (let i = 0; i < count; i++) {
@@ -124,7 +145,7 @@ export const mergeImages = async (
   count: number = 1
 ): Promise<ProcessResult[]> => {
   const results: ProcessResult[] = [];
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getAIClient();
   const modelId = 'gemini-2.5-flash-image';
 
   for (let i = 0; i < count; i++) {

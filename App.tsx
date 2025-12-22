@@ -121,7 +121,6 @@ export default function App() {
   });
   const [generateCount, setGenerateCount] = useState(1);
   const [aspectRatio, setAspectRatio] = useState('1:1');
-  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<AppSettings>(() => safeStorage.load('restaurai_settings', { language: 'pt', theme: 'dark', preferredModel: 'gemini-2.5-flash-image' }));
   const [showSettings, setShowSettings] = useState(false);
@@ -273,12 +272,12 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen ${isLight ? 'bg-slate-200 text-slate-950' : 'bg-slate-950 text-white'} transition-colors duration-300 pb-24 md:pb-20`}>
-      <header className={`border-b ${isLight ? 'border-slate-300 bg-white/95 shadow-sm' : 'border-slate-800 bg-slate-900/50'} backdrop-blur-md sticky top-0 z-50 h-16 md:h-20`}>
+    <div className={`min-h-screen ${isLight ? 'bg-slate-300 text-slate-950' : 'bg-slate-950 text-white'} transition-colors duration-300 pb-24 md:pb-20`}>
+      <header className={`border-b ${isLight ? 'border-slate-400 bg-white/95 shadow-sm' : 'border-slate-800 bg-slate-900/50'} backdrop-blur-md sticky top-0 z-50 h-16 md:h-20`}>
         <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
           <button className="flex items-center gap-2 md:gap-5 cursor-pointer group outline-none relative py-2 px-4" onClick={handleFullReset}>
-            {/* Glow Effect on Hover - Reduced Size */}
-            <div className="absolute inset-0 bg-yellow-400/0 blur-[20px] rounded-full z-0 pointer-events-none group-hover:bg-yellow-400/15 transition-all duration-500 scale-110" />
+            {/* Glow Effect on Hover - Refined and Stronger */}
+            <div className="absolute inset-0 bg-yellow-400/0 blur-[15px] rounded-full z-0 pointer-events-none group-hover:bg-yellow-400/30 transition-all duration-500 scale-90" />
             
             <div className="relative w-9 h-9 md:w-11 md:h-11 overflow-hidden rounded-2xl border border-white/20 bg-slate-800 flex items-center justify-center z-10 shadow-lg">
               <img src={LOGO_THUMBNAIL_URL} alt="Logo" className="w-full h-full object-cover" />
@@ -291,7 +290,7 @@ export default function App() {
             </div>
           </button>
           
-          <nav className={`hidden md:flex items-center p-1 rounded-2xl border backdrop-blur-sm ${isLight ? 'bg-slate-300/50 border-slate-400' : 'bg-slate-800/20 border-slate-400/30'}`}>
+          <nav className={`hidden md:flex items-center p-1 rounded-2xl border backdrop-blur-sm ${isLight ? 'bg-slate-400/50 border-slate-500' : 'bg-slate-800/20 border-slate-400/30'}`}>
              <button onClick={() => setActiveTab('restore')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'restore' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><RefreshCw className="w-3 h-3" /> Restaurar</button>
              <button onClick={() => setActiveTab('merge')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'merge' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><Layers className="w-3 h-3" /> Mesclar</button>
              <button onClick={() => setActiveTab('generate')} className={`flex items-center gap-2 px-6 py-2 rounded-xl transition-all text-xs uppercase font-bold ${activeTab === 'generate' ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-700 hover:text-slate-950' : 'text-slate-400 hover:text-white'}`}><ImageIcon className="w-3 h-3" /> Gerar</button>

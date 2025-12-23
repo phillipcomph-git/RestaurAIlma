@@ -12,7 +12,7 @@ import {
 import { Uploader } from './components/Uploader';
 import { ImageComparator } from './components/ImageComparator';
 import { Button } from './components/Button';
-import { useImageProcessing } from './src/hooks/useImageProcessing';
+import { useImageProcessing } from './hooks/useImageProcessing';
 import { ImageState, MergeState, AppTab, ProcessingStatus, RestorationMode, ActionOption, HistoryItem, AppSettings, GenerateState } from './types';
 
 const RESTORATION_OPTIONS: ActionOption[] = [
@@ -101,15 +101,7 @@ const safeStorage = {
 };
 
 export default function App() {
-  const { processImage: apiProcessImage, isLoading, error: apiError } = useImageProcessing({
-    onSuccess: (result) => {
-      console.log('Imagem processada com sucesso');
-    },
-    onError: (err) => {
-      console.error('Erro ao processar:', err);
-    },
-  });
-
+  const { processImage: apiProcess, mergeImages: apiMerge, generateImage: apiGenerate, chat: apiChat, isProcessing } = useImageProcessing();
   const [activeTab, setActiveTab] = useState<AppTab>('restore');
   const [imageState, setImageState] = useState<ImageState>({
     file: null, originalPreview: null, processedPreview: null, mimeType: '', history: [], future: []
@@ -120,7 +112,6 @@ export default function App() {
   });
   const [mergeCount, setMergeCount] = useState(1);
   const [status, setStatus] = useState<ProcessingStatus>('idle');
-  const [processingProgress, setProcessingProgress] = useState<string>('');
   const [activeMode, setActiveMode] = useState<RestorationMode | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -137,6 +128,7 @@ export default function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(() => safeStorage.load('restaurai_history', []));
 
+  useEffect(() => { setStatus(isProcessing ? 'processing' : 'idle'); }, [isProcessing]);
   useEffect(() => { safeStorage.save('restaurai_history', history); }, [history]);
   useEffect(() => { safeStorage.save('restaurai_settings', settings); }, [settings]);
 
@@ -144,36 +136,34 @@ export default function App() {
   const cardBg = isLight ? 'bg-white shadow-[0_8px_30px_rgb(0,0,0,0.06)] border-slate-200' : 'bg-slate-900/80 shadow-2xl border-slate-800';
   const textMain = isLight ? 'text-slate-900 font-extralight' : 'text-white font-extralight';
   const textSub = isLight ? 'text-slate-600 font-medium' : 'text-slate-400 font-light';
-
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
   const handleApiError = (err: any) => {
-    setStatus('error');
-    setProcessingProgress('');
     setErrorMsg(err.message || "Erro de conexão com a API.");
+    setStatus('error');
+    console.error("Erro no processamento:", err);
   };
 
   const handleImageSelect = (file: File, base64: string, mimeType: string) => {
     setImageState({ file, originalPreview: base64, processedPreview: null, mimeType, history: [], future: [] });
-    setStatus('idle');
     setErrorMsg(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleProcess = async (mode: RestorationMode) => {
     if (!imageState.originalPreview) return;
-    setStatus('processing');
     setActiveMode(mode);
     setErrorMsg(null);
     try {
       const toolPrompt = RESTORATION_OPTIONS.find(o => o.id === mode)?.prompt || '';
       const userContext = customPrompt.trim() ? `ADICIONAL: ${customPrompt}. ` : '';
       const finalPrompt = `${userContext}${toolPrompt}`;
-      const result = await apiProcessImage(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel);
+      
+      const result = await apiProcess(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel);
       
       setImageState(prev => ({ 
         ...prev, 
-        processedPreview: `data:image/png;base64,${result.base64}`,
+        processedPreview: result.base64,
         history: [...prev.history, prev.originalPreview!],
         future: [] 
       }));
@@ -181,7 +171,7 @@ export default function App() {
       setHistory(prev => [{
         id: Date.now().toString(),
         original: imageState.originalPreview!,
-        processed: `data:image/png;base64,${result.base64}`,
+        processed: result.base64,
         mode: RESTORATION_OPTIONS.find(o => o.id === mode)?.label || 'Personalizado',
         timestamp: Date.now(),
         description: result.description
@@ -202,7 +192,6 @@ export default function App() {
       history: [...prev.history], 
       future: []
     }));
-    setStatus('idle');
     setActiveMode(null);
     setCustomPrompt('');
   };
@@ -217,7 +206,6 @@ export default function App() {
       future: [prev.originalPreview!, ...prev.future],
       history: prev.history.slice(0, -1)
     }));
-    setStatus('idle');
   };
 
   const handleRedo = () => {
@@ -230,7 +218,6 @@ export default function App() {
       history: [...prev.history, prev.originalPreview!],
       future: prev.future.slice(1)
     }));
-    setStatus('idle');
   };
 
   const handleFullReset = () => {
@@ -240,7 +227,6 @@ export default function App() {
     setStatus('idle');
     setCustomPrompt('');
     setErrorMsg(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDownloadImage = (img: string | null) => {
@@ -255,12 +241,11 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!generateState.prompt.trim()) return;
-    setStatus('processing');
     setErrorMsg(null);
     try {
       const baseImg = generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined;
-      const results = await generateImageFromPrompt(generateState.prompt, generateCount, aspectRatio, baseImg);
-      setGenerateState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
+      const results = await apiGenerate(generateState.prompt, generateCount, aspectRatio, baseImg);
+      setGenerateState(prev => ({ ...prev, results: results.map((r: any) => r.base64), resultIndex: 0 }));
       setStatus('success');
     } catch (err: any) {
       handleApiError(err);
@@ -269,11 +254,10 @@ export default function App() {
 
   const handleMergeAction = async () => {
     if (!mergeState.imageA || !mergeState.imageB || !customPrompt.trim()) return;
-    setStatus('processing');
     setErrorMsg(null);
     try {
-      const results = await mergeImages(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt, mergeCount);
-      setMergeState(prev => ({ ...prev, results: results.map(r => r.base64), resultIndex: 0 }));
+      const results = await apiMerge(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt, mergeCount);
+      setMergeState(prev => ({ ...prev, results: results.map((r: any) => r.base64), resultIndex: 0 }));
       setStatus('success');
     } catch (err: any) {
       handleApiError(err);
@@ -285,9 +269,7 @@ export default function App() {
       <header className={`border-b ${isLight ? 'border-slate-400 bg-white/95 shadow-sm' : 'border-slate-800 bg-slate-900/50'} backdrop-blur-md sticky top-0 z-50 h-16 md:h-20`}>
         <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
           <button className="flex items-center gap-2 md:gap-5 cursor-pointer group outline-none relative py-2 px-4" onClick={handleFullReset}>
-            {/* Glow Effect on Hover - Refined and Stronger */}
-            <div className="absolute inset-0 bg-yellow-400/0 blur-[15px] rounded-full z-0 pointer-events-none group-hover:bg-yellow-400/30 transition-all duration-500 scale-90" />
-            
+            <div className="absolute inset-0 bg-yellow-400/0 blur-[15px] rounded-full z-0 pointer-events-none group-hover:bg-yellow-400/20 transition-all duration-500 scale-90" />
             <div className="relative w-9 h-9 md:w-11 md:h-11 overflow-hidden rounded-2xl border border-white/20 bg-slate-800 flex items-center justify-center z-10 shadow-lg">
               <img src={LOGO_THUMBNAIL_URL} alt="Logo" className="w-full h-full object-cover" />
             </div>
@@ -315,17 +297,10 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {errorMsg && (
-          <div className={`mb-6 p-5 rounded-3xl border bg-red-500/10 border-red-500/30 text-red-600 text-xs font-bold animate-in slide-in-from-top-4 shadow-xl`}>
-            <div className="flex items-center gap-4">
-              <div className="p-2 rounded-full bg-red-500 text-white">
-                <AlertCircle className="w-5 h-5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm uppercase tracking-soft mb-1">Erro de Processamento</p>
-                <p className="font-light opacity-90">{errorMsg}</p>
-              </div>
+          <div className="mb-6 p-5 rounded-3xl border bg-red-500/10 border-red-500/30 text-red-600 text-xs font-bold shadow-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
+              <div className="p-2 rounded-full bg-red-500 text-white"><AlertCircle className="w-5 h-5" /></div>
+              <div className="flex-1"><p className="text-sm uppercase mb-1 font-bold">Atenção</p><p className="font-light">{errorMsg}</p></div>
               <button onClick={() => setErrorMsg(null)} className="p-2 hover:bg-black/5 rounded-full"><X className="w-5 h-5" /></button>
-            </div>
           </div>
         )}
 
@@ -337,13 +312,13 @@ export default function App() {
                 <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Restauração inteligente preservando memórias preciosas com perfeição.</p>
                 <Uploader onImageSelect={handleImageSelect} />
               </div>
-              <ChatAssistant cardBg={cardBg} isLight={isLight} />
+              <ChatAssistant cardBg={cardBg} isLight={isLight} apiChat={apiChat} />
             </div>
           ) : (
             <div className="grid lg:grid-cols-3 gap-8 items-start">
               <div className="lg:col-span-2 space-y-6">
                 <div className={`${cardBg} rounded-3xl border p-2 min-h-[400px] flex items-center justify-center relative overflow-hidden transition-all shadow-2xl`}>
-                  {status === 'processing' && <LoaderOverlay progress={processingProgress} />}
+                  {status === 'processing' && <LoaderOverlay />}
                   {imageState.processedPreview ? (
                     <ImageComparator 
                       original={imageState.originalPreview} 
@@ -354,61 +329,36 @@ export default function App() {
                     <img src={imageState.originalPreview} className="max-h-[70vh] rounded-xl shadow-xl" alt="Preview" />
                   )}
                 </div>
-
                 {imageState.processedPreview && (
-                   <div className="flex flex-col sm:flex-row gap-4 items-center justify-center animate-in fade-in slide-in-from-top-4 duration-300">
-                      <Button 
-                        onClick={handleApplyResult} 
-                        variant="primary" 
-                        className="h-14 px-10 uppercase text-xs tracking-elegant font-bold w-full sm:w-auto bg-green-600 hover:bg-green-500 shadow-green-500/20" 
-                        icon={Check}
-                      >
-                        Aplicar e Continuar
-                      </Button>
-                      <Button 
-                        onClick={() => handleDownloadImage(imageState.processedPreview)} 
-                        variant="secondary" 
-                        className="h-14 px-10 uppercase text-xs tracking-elegant font-bold w-full sm:w-auto" 
-                        icon={Download}
-                      >
-                        Baixar Agora
-                      </Button>
+                   <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
+                      <Button onClick={handleApplyResult} variant="primary" className="h-14 px-10 uppercase text-xs font-bold w-full sm:w-auto bg-green-600 hover:bg-green-500" icon={Check}>Aplicar</Button>
+                      <Button onClick={() => handleDownloadImage(imageState.processedPreview)} variant="secondary" className="h-14 px-10 uppercase text-xs font-bold w-full sm:w-auto" icon={Download}>Baixar</Button>
                    </div>
                 )}
               </div>
-              
               <div className="space-y-6">
                 <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-elegant text-indigo-600">
-                         <MessageSquare className="w-3.5 h-3.5" /> Ajuste Manual
-                      </div>
+                      <div className="text-[10px] uppercase font-bold tracking-elegant text-indigo-600 flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5" /> Ajuste Manual</div>
                       <div className={`flex p-1 rounded-xl border space-x-1 ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/50 border-slate-700'}`}>
-                        <button onClick={handleUndo} disabled={imageState.history.length === 0} className={`p-2 rounded-lg disabled:opacity-20 transition-all ${isLight ? 'text-indigo-600 hover:bg-slate-200' : 'text-yellow-400 hover:bg-slate-700'}`}><Undo2 className="w-4 h-4" /></button>
-                        <button onClick={handleRedo} disabled={imageState.future.length === 0} className={`p-2 rounded-lg disabled:opacity-20 transition-all ${isLight ? 'text-indigo-600 hover:bg-slate-200' : 'text-yellow-400 hover:bg-slate-700'}`}><Redo2 className="w-4 h-4" /></button>
+                        <button onClick={handleUndo} disabled={imageState.history.length === 0} className="p-2 rounded-lg disabled:opacity-20"><Undo2 className="w-4 h-4" /></button>
+                        <button onClick={handleRedo} disabled={imageState.future.length === 0} className="p-2 rounded-lg disabled:opacity-20"><Redo2 className="w-4 h-4" /></button>
                       </div>
                    </div>
-                   
                    <div className="relative group">
-                     <textarea 
-                       className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600 placeholder:text-slate-500 font-medium`} 
-                       placeholder="O que deseja ajustar na próxima edição?..." 
-                       value={customPrompt} 
-                       onChange={e => setCustomPrompt(e.target.value)} 
-                     />
+                     <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600`} placeholder="Instrução personalizada..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
                      <button onClick={() => handleProcess('custom')} disabled={!customPrompt.trim() || status === 'processing'} className="absolute right-2 bottom-2 p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg disabled:opacity-50"><Sparkles className="w-4 h-4" /></button>
                    </div>
                 </div>
-
                 <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
-                  <h2 className={`text-[10px] flex items-center gap-2 mb-6 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-3.5 h-3.5 text-indigo-600" /> Métodos de Restauração</h2>
+                  <h2 className={`text-[10px] flex items-center gap-2 mb-6 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-3.5 h-3.5 text-indigo-600" /> Métodos</h2>
                   <div className="grid grid-cols-1 gap-2.5">
                     {RESTORATION_OPTIONS.map(opt => (
                       <ActionCard key={opt.id} option={opt} active={activeMode === opt.id && status === 'success'} onClick={() => handleProcess(opt.id)} isLight={isLight} />
                     ))}
                   </div>
                 </div>
-                <Button onClick={handleFullReset} variant="ghost" className={`w-full h-10 uppercase text-[9px] tracking-elegant border ${isLight ? 'border-slate-400 text-slate-500 hover:text-slate-900' : 'border-slate-700/30'}`} icon={RotateCcw}>Limpar Estúdio</Button>
+                <Button onClick={handleFullReset} variant="ghost" className="w-full h-10 uppercase text-[9px] border" icon={RotateCcw}>Limpar Estúdio</Button>
               </div>
             </div>
           )
@@ -425,27 +375,21 @@ export default function App() {
                <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-4`}>
                   <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-32 outline-none border transition-all focus:border-indigo-600`} placeholder="Instrução de mesclagem..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
                   <div className="flex flex-col gap-2">
-                    <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Quantidade de Variações</p>
+                    <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Variações</p>
                     <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
-                        {[1, 2, 3, 4].map(n => (
-                          <button key={n} onClick={() => setMergeCount(n)} className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${mergeCount === n ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500 hover:text-indigo-400'}`}>{n}x</button>
+                        {[1, 2, 4].map(n => (
+                          <button key={n} onClick={() => setMergeCount(n)} className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${mergeCount === n ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500'}`}>{n}x</button>
                         ))}
                     </div>
                   </div>
-                  <Button onClick={handleMergeAction} className="w-full h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Layers}>Gerar Fusão</Button>
+                  <Button onClick={handleMergeAction} className="w-full h-14 uppercase font-bold" isLoading={status === 'processing'} icon={Layers}>Gerar Fusão</Button>
                </div>
             </div>
-            {mergeState.results && (
-              <ResultsGallery 
-                results={mergeState.results} 
-                currentIndex={mergeState.resultIndex}
-                onIndexChange={(idx: number) => setMergeState(p => ({...p, resultIndex: idx}))}
-                onDownload={() => handleDownloadImage(mergeState.results![mergeState.resultIndex])} 
-                cardBg={cardBg} 
-                onReset={() => setMergeState(p => ({...p, results: null}))} 
-              />
+            {mergeState.results ? (
+              <ResultsGallery results={mergeState.results} currentIndex={mergeState.resultIndex} onIndexChange={(idx: number) => setMergeState(p => ({...p, resultIndex: idx}))} onDownload={() => handleDownloadImage(mergeState.results![mergeState.resultIndex])} cardBg={cardBg} onReset={() => setMergeState(p => ({...p, results: null}))} />
+            ) : (
+              <ChatAssistant cardBg={cardBg} isLight={isLight} apiChat={apiChat} />
             )}
-            {!mergeState.results && <ChatAssistant cardBg={cardBg} isLight={isLight} />}
           </div>
         )}
 
@@ -453,83 +397,61 @@ export default function App() {
           <div className="grid md:grid-cols-2 gap-12 py-10">
             <div className="space-y-8">
                <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Crie <span className="text-yellow-500 font-bold">arte</span>.</h1>
-               
                <div className="flex items-center gap-4">
-                  <div className="w-24 h-24 sm:w-32 sm:h-32">
-                    <UploaderCompact 
-                      label="Referência" 
-                      current={generateState.baseImage} 
-                      onSelect={(f:any, b:any, m:any) => setGenerateState(p => ({...p, baseImage: b, baseMimeType: m}))} 
-                      isLight={isLight} 
-                    />
-                  </div>
-                  <div className="flex-1">
-                     <p className={`text-[10px] uppercase font-bold tracking-elegant mb-1 ${textSub}`}>Base (Opcional)</p>
-                     <p className={`text-[9px] leading-relaxed ${textSub} opacity-80`}>Use uma imagem como guia visual para a IA.</p>
-                  </div>
+                  <div className="w-32 h-32"><UploaderCompact label="Referência" current={generateState.baseImage} onSelect={(f:any, b:any, m:any) => setGenerateState(p => ({...p, baseImage: b, baseMimeType: m}))} isLight={isLight} /></div>
+                  <div className="flex-1"><p className={`text-[10px] uppercase font-bold mb-1 ${textSub}`}>Base (Opcional)</p><p className={`text-[9px] ${textSub} opacity-80`}>Use uma imagem como guia visual.</p></div>
                </div>
-
                <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-6`}>
-                  <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-40 outline-none border transition-all focus:border-indigo-600`} placeholder="Descreva sua visão..." value={generateState.prompt} onChange={e => setGenerateState(p => ({...p, prompt: e.target.value}))} />
+                  <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-40 outline-none border focus:border-indigo-600`} placeholder="Descreva sua visão..." value={generateState.prompt} onChange={e => setGenerateState(p => ({...p, prompt: e.target.value}))} />
+                  
                   <div className="grid grid-cols-2 gap-4">
                      <div className="flex flex-col gap-2">
                         <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Quantidade</p>
                         <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
-                           {[1, 2, 3, 4].map(n => (
-                             <button key={n} onClick={() => setGenerateCount(n)} className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${generateCount === n ? 'bg-indigo-600 text-white shadow-md' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500 hover:text-indigo-400'}`}>{n}x</button>
+                           {[1, 2, 4].map(n => (
+                             <button key={n} onClick={() => setGenerateCount(n)} className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${generateCount === n ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500'}`}>{n}x</button>
                            ))}
                         </div>
                      </div>
                      <div className="flex flex-col gap-2">
                         <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Proporção</p>
                         <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
-                           <button onClick={() => setAspectRatio('1:1')} className={`flex-1 flex justify-center py-1.5 rounded-lg ${aspectRatio === '1:1' ? 'bg-indigo-600 text-white' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500'}`}><Square className="w-3.5 h-3.5" /></button>
-                           <button onClick={() => setAspectRatio('16:9')} className={`flex-1 flex justify-center py-1.5 rounded-lg ${aspectRatio === '16:9' ? 'bg-indigo-600 text-white' : isLight ? 'text-slate-500 hover:text-indigo-600' : 'text-slate-500'}`}><RectangleHorizontal className="w-3.5 h-3.5" /></button>
+                           <button onClick={() => setAspectRatio('1:1')} className={`flex-1 flex justify-center py-1.5 rounded-lg ${aspectRatio === '1:1' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500'}`}><Square className="w-3.5 h-3.5" /></button>
+                           <button onClick={() => setAspectRatio('16:9')} className={`flex-1 flex justify-center py-1.5 rounded-lg ${aspectRatio === '16:9' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500'}`}><RectangleHorizontal className="w-3.5 h-3.5" /></button>
                         </div>
                      </div>
                   </div>
-                  <Button onClick={handleGenerate} className="w-full h-14 uppercase tracking-elegant font-bold" isLoading={status === 'processing'} icon={Sparkles}>Criar Imagem</Button>
+
+                  <Button onClick={handleGenerate} className="w-full h-14 uppercase font-bold" isLoading={status === 'processing'} icon={Sparkles}>Criar</Button>
                </div>
             </div>
-            {generateState.results && (
-              <ResultsGallery 
-                results={generateState.results} 
-                currentIndex={generateState.resultIndex}
-                onIndexChange={(idx: number) => setGenerateState(p => ({...p, resultIndex: idx}))}
-                onDownload={() => handleDownloadImage(generateState.results![generateState.resultIndex])} 
-                cardBg={cardBg} 
-                onReset={() => setGenerateState(p => ({...p, results: null}))} 
-              />
+            {generateState.results ? (
+              <ResultsGallery results={generateState.results} currentIndex={generateState.resultIndex} onIndexChange={(idx: number) => setGenerateState(p => ({...p, resultIndex: idx}))} onDownload={() => handleDownloadImage(generateState.results![generateState.resultIndex])} cardBg={cardBg} onReset={() => setGenerateState(p => ({...p, results: null}))} />
+            ) : (
+              <ChatAssistant cardBg={cardBg} isLight={isLight} apiChat={apiChat} />
             )}
-            {!generateState.results && <ChatAssistant cardBg={cardBg} isLight={isLight} />}
           </div>
         )}
       </main>
 
       <nav className={`md:hidden fixed bottom-4 left-4 right-4 z-50 p-2 rounded-[2rem] border backdrop-blur-3xl shadow-2xl flex justify-between ${isLight ? 'bg-white/95 border-slate-300 shadow-xl' : 'bg-slate-950/80 border-slate-800'}`}>
          {(['restore', 'merge', 'generate'] as AppTab[]).map(tab => (
-           <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 flex flex-col items-center gap-1 rounded-[1.5rem] transition-all ${activeTab === tab ? 'bg-indigo-600 text-white' : isLight ? 'text-slate-400 hover:text-indigo-600' : 'text-slate-500'}`}>
+           <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-3 flex flex-col items-center gap-1 rounded-[1.5rem] transition-all ${activeTab === tab ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>
              {tab === 'restore' ? <RotateCcw className="w-4 h-4" /> : tab === 'merge' ? <Layers className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
-             <span className="text-[7px] uppercase font-bold tracking-widest">{tab === 'restore' ? 'Restaurar' : tab === 'merge' ? 'Mesclar' : 'Gerar'}</span>
+             <span className="text-[7px] uppercase font-bold">{tab === 'restore' ? 'Restaurar' : tab === 'merge' ? 'Mesclar' : 'Gerar'}</span>
            </button>
          ))}
       </nav>
 
       <Modal isOpen={showAbout} onClose={() => setShowAbout(false)} title="Sobre RestaurAIlma" isLight={isLight}>
         <div className="space-y-8 text-center">
-          <div className={`relative w-full aspect-square rounded-[2rem] overflow-hidden shadow-2xl border ${isLight ? 'border-indigo-600/10' : 'border-indigo-600/20'}`}>
+          <div className="relative w-full aspect-square rounded-[2rem] overflow-hidden border border-indigo-600/20 shadow-2xl">
              <AboutCarousel images={ABOUT_CAROUSEL_IMAGES} />
-             <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
           </div>
-          <div className="space-y-6">
-            <p className={`text-sm italic leading-relaxed tracking-soft ${isLight ? 'text-indigo-700 font-medium' : 'text-indigo-400 font-extralight'}`}>
-              "para conservar a memória de quem nos trouxe até aqui"
-            </p>
-            <div className="flex flex-col items-center gap-1.5 opacity-80">
-              <div className={`h-[1px] w-8 ${isLight ? 'bg-indigo-600/50' : 'bg-indigo-600/30'} mb-2`}></div>
-              <span className={`text-[10px] font-bold uppercase tracking-elegant flex items-center gap-2 ${isLight ? 'text-slate-900' : 'text-white'}`}>
-                Para Ilma S2 <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" />
-              </span>
+          <div className="space-y-6 italic leading-relaxed text-sm">
+            <p className={isLight ? 'text-indigo-700' : 'text-indigo-400'}>"para conservar a memória de quem nos trouxe até aqui"</p>
+            <div className="flex flex-col items-center gap-1.5 uppercase text-[10px] font-bold opacity-80">
+              <span className="flex items-center gap-2">Para Ilma S2 <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" /></span>
             </div>
           </div>
         </div>
@@ -537,17 +459,17 @@ export default function App() {
 
       <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} title="Histórico" isLight={isLight}>
         {history.length === 0 ? (
-          <div className="text-center py-12 opacity-40"><Clock className={`w-12 h-12 mx-auto mb-4 ${isLight ? 'text-slate-400' : ''}`} /><p className={`text-xs uppercase tracking-elegant ${isLight ? 'text-slate-500' : ''}`}>Sem registros ainda.</p></div>
+          <div className="text-center py-12 opacity-40"><Clock className="w-12 h-12 mx-auto mb-4" /><p className="text-xs uppercase">Sem registros.</p></div>
         ) : (
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 no-scrollbar">
             {history.map((item) => (
-              <div key={item.id} className={`flex gap-4 p-3 rounded-2xl border transition-colors ${isLight ? 'bg-slate-50 border-slate-200 hover:border-indigo-400' : 'bg-slate-800/40 border-slate-700/50 hover:border-slate-500'}`}>
-                <div className={`w-16 h-16 flex-shrink-0 overflow-hidden rounded-xl border ${isLight ? 'border-slate-200' : 'border-slate-700'}`}><img src={item.processed} className="w-full h-full object-cover" /></div>
+              <div key={item.id} className={`flex gap-4 p-3 rounded-2xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/40 border-slate-700/50'}`}>
+                <div className="w-16 h-16 overflow-hidden rounded-xl border border-slate-700 shrink-0"><img src={item.processed} className="w-full h-full object-cover" /></div>
                 <div className="flex-1 flex flex-col justify-center">
-                  <div className={`text-[9px] uppercase font-bold mb-1 ${isLight ? 'text-indigo-700' : 'text-indigo-400'}`}>{item.mode}</div>
+                  <div className="text-[9px] uppercase font-bold mb-1 text-indigo-400">{item.mode}</div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleDownloadImage(item.processed)} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-500 hover:bg-indigo-600 hover:text-white' : 'text-slate-400 hover:bg-indigo-600 hover:text-white'}`}><Download className="w-3 h-3" /></button>
-                    <button onClick={() => setHistory(h => h.filter(x => x.id !== item.id))} className={`p-1.5 rounded-lg transition-colors ${isLight ? 'text-slate-500 hover:bg-red-600 hover:text-white' : 'text-slate-400 hover:bg-red-600 hover:text-white'}`}><Trash2 className="w-3 h-3" /></button>
+                    <button onClick={() => handleDownloadImage(item.processed)} className="p-1.5 rounded-lg hover:bg-indigo-600"><Download className="w-3 h-3 text-white" /></button>
+                    <button onClick={() => setHistory(h => h.filter(x => x.id !== item.id))} className="p-1.5 rounded-lg hover:bg-red-600"><Trash2 className="w-3 h-3 text-white" /></button>
                   </div>
                 </div>
               </div>
@@ -558,10 +480,10 @@ export default function App() {
 
       <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} title="Configurações" isLight={isLight}>
         <div className="space-y-6">
-           <h3 className={`text-[10px] uppercase tracking-elegant font-bold mb-2 ${isLight ? 'text-indigo-700' : 'text-indigo-400'}`}>Tema Visual</h3>
-           <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-200 border-slate-300' : 'bg-slate-800/10 border-slate-400/20'}`}>
-              <button onClick={() => setSettings(s => ({...s, theme: 'dark'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${!isLight ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-900'}`}><Moon className="w-3 h-3" /> Dark</button>
-              <button onClick={() => setSettings(s => ({...s, theme: 'light'}))} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${isLight ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-900'}`}><Sun className="w-3 h-3" /> Light</button>
+           <h3 className="text-[10px] uppercase font-bold mb-2">Tema</h3>
+           <div className="flex p-1 rounded-xl border border-slate-700">
+              <button onClick={() => setSettings(s => ({...s, theme: 'dark'}))} className={`flex-1 py-2 rounded-lg text-xs font-bold ${!isLight ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Dark</button>
+              <button onClick={() => setSettings(s => ({...s, theme: 'light'}))} className={`flex-1 py-2 rounded-lg text-xs font-bold ${isLight ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Light</button>
            </div>
         </div>
       </Modal>
@@ -569,47 +491,31 @@ export default function App() {
   );
 }
 
-function LoaderOverlay({ progress }: { progress?: string }) {
+function LoaderOverlay() {
   return (
-    <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
-      <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-      <p className="text-lg font-bold uppercase tracking-elegant text-white">Processando...</p>
-      {progress && <p className="text-[10px] uppercase tracking-widest text-indigo-400 mt-2">{progress}</p>}
+    <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center p-6">
+      <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4 shadow-[0_0_20px_rgba(79,70,229,0.3)]"></div>
+      <p className="text-lg font-bold uppercase text-white tracking-widest">Processando...</p>
+      <p className="text-[10px] text-slate-400 mt-2 uppercase tracking-elegant">A inteligência artificial está desenhando as melhorias</p>
     </div>
   );
 }
 
-function ResultsGallery({ results, currentIndex = 0, onIndexChange, onDownload, onReset, cardBg }: any) {
-  const hasMultiple = results.length > 1;
-
-  const handleNext = () => {
-    onIndexChange((currentIndex + 1) % results.length);
-  };
-
-  const handlePrev = () => {
-    onIndexChange((currentIndex - 1 + results.length) % results.length);
-  };
-
+function ResultsGallery({ results, currentIndex, onIndexChange, onDownload, onReset, cardBg }: any) {
   return (
-    <div className={`${cardBg} rounded-3xl border p-4 flex flex-col items-center justify-center min-h-[400px] shadow-2xl relative`}>
+    <div className={`${cardBg} rounded-3xl border p-4 flex flex-col items-center justify-center min-h-[400px] shadow-2xl relative animate-in zoom-in-95 duration-500`}>
       <div className="relative group w-full flex flex-col items-center">
-        <img src={results[currentIndex]} className="max-w-full rounded-2xl shadow-xl mb-4 transition-all duration-300" alt={`Resultado ${currentIndex + 1}`} />
-        
-        {hasMultiple && (
-          <>
-            <button onClick={handlePrev} className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-indigo-600 transition-all opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-            <button onClick={handleNext} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 text-white rounded-full hover:bg-indigo-600 transition-all opacity-0 group-hover:opacity-100 backdrop-blur-sm">
-              <ChevronRight className="w-6 h-6" />
-            </button>
-            <div className="absolute bottom-6 px-3 py-1 bg-black/60 backdrop-blur-md rounded-full text-[10px] font-bold text-white uppercase tracking-widest border border-white/10">
-              {currentIndex + 1} / {results.length}
-            </div>
-          </>
+        <div className="relative w-full aspect-square flex items-center justify-center bg-black/5 rounded-2xl overflow-hidden mb-4 border border-white/5">
+           <img src={results[currentIndex]} className="max-h-full max-w-full object-contain shadow-xl" />
+        </div>
+        {results.length > 1 && (
+          <div className="flex gap-4 mb-4">
+            <button onClick={() => onIndexChange((currentIndex - 1 + results.length) % results.length)} className="p-2 bg-slate-800 rounded-full text-white hover:bg-indigo-600 transition-colors"><ChevronLeft /></button>
+            <span className="flex items-center text-xs font-bold uppercase tabular-nums tracking-widest">{currentIndex + 1} / {results.length}</span>
+            <button onClick={() => onIndexChange((currentIndex + 1) % results.length)} className="p-2 bg-slate-800 rounded-full text-white hover:bg-indigo-600 transition-colors"><ChevronRight /></button>
+          </div>
         )}
       </div>
-
       <div className="flex gap-4 w-full">
          <Button onClick={onDownload} variant="primary" className="flex-1 h-12 uppercase text-xs font-bold" icon={Download}>Baixar</Button>
          <Button onClick={onReset} variant="secondary" className="flex-1 h-12 uppercase text-xs font-bold">Refazer</Button>
@@ -618,16 +524,56 @@ function ResultsGallery({ results, currentIndex = 0, onIndexChange, onDownload, 
   );
 }
 
-function ChatAssistant({ cardBg, isLight }: any) {
+function ChatAssistant({ cardBg, isLight, apiChat }: { cardBg: string; isLight: boolean; apiChat: (m: string) => Promise<string> }) {
+  const [messages, setMessages] = useState<{role: 'user' | 'model', text: string}[]>([
+    { role: 'model', text: 'Olá! Sou seu assistente de IA. Como posso ajudar na restauração hoje?' }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setLoading(true);
+    try {
+      const response = await apiChat(userMsg);
+      setMessages(prev => [...prev, { role: 'model', text: response }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'model', text: 'Desculpe, tive um problema de conexão. Poderia tentar novamente?' }]);
+    } finally { setLoading(false); }
+  };
+
   return (
-    <div className={`${cardBg} rounded-[2rem] border h-[400px] flex flex-col overflow-hidden shadow-xl`}>
-      <div className={`p-4 border-b ${isLight ? 'border-slate-200 bg-slate-50/50' : 'border-slate-800 bg-black/5'} flex items-center justify-between`}>
-        <span className={`text-[10px] font-bold uppercase tracking-elegant opacity-60 ${isLight ? 'text-slate-900' : ''}`}>IA Concierge</span>
+    <div className={`${cardBg} rounded-[2rem] border h-[450px] flex flex-col overflow-hidden shadow-xl`}>
+      <div className={`p-4 border-b ${isLight ? 'border-slate-200 bg-slate-50' : 'border-slate-800 bg-black/5'} flex items-center justify-between`}>
+        <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div><span className="text-[10px] font-bold uppercase opacity-60">Concierge Online</span></div>
         <MessageSquare className="w-4 h-4 text-indigo-600" />
       </div>
-      <div className="flex-1 p-6 space-y-4">
-        <div className={`p-4 rounded-2xl text-xs leading-relaxed border ${isLight ? 'bg-slate-50 text-slate-800 border-slate-200' : 'bg-slate-800 border-transparent'}`}>
-          Olá! Sou seu assistente de IA. Como posso ajudar a recuperar suas memórias hoje?
+      <div ref={scrollRef} className="flex-1 p-4 space-y-4 overflow-y-auto no-scrollbar scroll-smooth">
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300`}>
+            <div className={`max-w-[85%] p-3 rounded-2xl text-[11px] leading-relaxed border ${m.role === 'user' ? 'bg-indigo-600 text-white border-indigo-400' : isLight ? 'bg-slate-100 border-slate-200 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'}`}>{m.text}</div>
+          </div>
+        ))}
+        {loading && (
+           <div className="flex justify-start animate-pulse">
+              <div className="bg-slate-800 p-2 rounded-xl text-[10px] uppercase font-bold text-slate-500">Escrevendo...</div>
+           </div>
+        )}
+      </div>
+      <div className={`p-3 border-t ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
+        <div className="relative">
+          <input type="text" className={`w-full ${isLight ? 'bg-white text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl py-2.5 pl-4 pr-12 text-xs outline-none border focus:border-indigo-600 transition-all`} placeholder="Dúvidas? Escreva aqui..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
+          <button onClick={handleSend} disabled={!input.trim() || loading} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-indigo-500 disabled:opacity-30 hover:scale-110 transition-transform"><Send className="w-4 h-4" /></button>
         </div>
       </div>
     </div>
@@ -638,11 +584,11 @@ function Modal({ isOpen, onClose, title, children, isLight }: any) {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-md" onClick={onClose} />
-      <div className={`relative w-full max-w-md ${isLight ? 'bg-white text-slate-950' : 'bg-slate-900 text-white'} rounded-[2rem] border border-slate-800/50 overflow-hidden shadow-2xl`}>
+      <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-300" onClick={onClose} />
+      <div className={`relative w-full max-w-md ${isLight ? 'bg-white text-slate-950' : 'bg-slate-900 text-white'} rounded-[2rem] border border-slate-800/50 overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300`}>
         <div className={`p-6 border-b flex items-center justify-between ${isLight ? 'border-slate-100' : 'border-slate-800/20'}`}>
-          <h2 className={`text-xs uppercase font-bold tracking-elegant ${isLight ? 'text-indigo-700' : ''}`}>{title}</h2>
-          <button onClick={onClose} className={`p-2 rounded-full transition-colors ${isLight ? 'hover:bg-slate-100 text-slate-400 hover:text-slate-900' : 'hover:bg-black/5'}`}><X className="w-5 h-5" /></button>
+          <h2 className="text-xs uppercase font-bold tracking-elegant">{title}</h2>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-black/5"><X className="w-5 h-5" /></button>
         </div>
         <div className="p-6">{children}</div>
       </div>
@@ -652,11 +598,11 @@ function Modal({ isOpen, onClose, title, children, isLight }: any) {
 
 function UploaderCompact({ label, current, onSelect, isLight }: any) {
   return (
-    <label className={`aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all hover:border-indigo-600 relative overflow-hidden h-full w-full ${isLight ? 'bg-slate-50 border-slate-400 hover:bg-slate-100' : 'border-slate-700'}`}>
+    <label className={`aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all hover:border-indigo-600 relative overflow-hidden h-full w-full ${isLight ? 'bg-slate-50 border-slate-400' : 'bg-slate-900/40 border-slate-700'}`}>
       {current ? <img src={current} className="w-full h-full object-cover rounded-xl" /> : (
         <div className="flex flex-col items-center p-2 text-center">
           <ImageIcon className="w-5 h-5 text-indigo-600 mb-1" />
-          <span className={`text-[10px] font-bold uppercase ${isLight ? 'text-slate-600' : ''}`}>{label}</span>
+          <span className="text-[10px] font-bold uppercase text-slate-500">{label}</span>
         </div>
       )}
       <input type="file" className="hidden" onChange={(e:any) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => onSelect(f, r.result, f.type); r.readAsDataURL(f); } }} />
@@ -681,13 +627,13 @@ function AboutCarousel({ images }: { images: string[] }) {
 
 function ActionCard({ option, active, onClick, isLight }: any) {
   return (
-    <button onClick={onClick} className={`flex items-center p-3.5 rounded-2xl border text-left transition-all w-full ${active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : isLight ? 'bg-white border-slate-300 text-slate-900 hover:border-indigo-400 hover:bg-slate-50 shadow-sm' : 'bg-slate-800 border-slate-700 hover:border-indigo-400'}`}>
-      <div className={`p-2 rounded-xl mr-3.5 ${active ? 'bg-white/20' : isLight ? 'bg-indigo-100 text-indigo-700' : 'bg-indigo-600/10 text-indigo-600'}`}>
+    <button onClick={onClick} className={`flex items-center p-3.5 rounded-2xl border text-left transition-all w-full group ${active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : isLight ? 'bg-white border-slate-300 hover:border-indigo-500' : 'bg-slate-800 border-slate-700 hover:border-indigo-500'}`}>
+      <div className={`p-2 rounded-xl mr-3.5 transition-colors ${active ? 'bg-white/20' : 'bg-indigo-600/10 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>
         <option.icon className="w-4 h-4" />
       </div>
       <div className="flex-1">
-        <div className={`text-[10px] uppercase font-bold ${active ? 'text-white' : ''}`}>{option.label}</div>
-        <div className={`text-[8px] line-clamp-1 ${active ? 'text-white/70' : isLight ? 'text-slate-500' : 'opacity-70'}`}>{option.description}</div>
+        <div className="text-[10px] uppercase font-bold tracking-soft">{option.label}</div>
+        <div className="text-[8px] line-clamp-1 opacity-70 font-light">{option.description}</div>
       </div>
     </button>
   );

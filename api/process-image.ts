@@ -1,6 +1,8 @@
+
+import { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 
-export default async function handler(req, res) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { base64Image, mimeType, prompt, model } = req.body;
@@ -38,7 +40,7 @@ export default async function handler(req, res) {
       });
     }
     throw new Error("IA não gerou imagem.");
-  } catch (error) {
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 }

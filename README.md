@@ -1,38 +1,41 @@
+
 # RestaurAIlma 🎨✨
 
-Uma ferramenta avançada de restauração de imagens movida por IA (Gemini 2.5 Flash), desenvolvida em homenagem à memória de Ilma.
+> "Para conservar a memória de quem nos trouxe até aqui. S2 Ilma."
 
-## ✨ Funcionalidades
+**RestaurAIlma** é uma aplicação de ponta para restauração e manipulação de imagens, utilizando o poder dos modelos Gemini 2.5 Flash da Google. Projetada com foco em UX/UI minimalista e elegante, ela permite recuperar fotos antigas, colorir memórias e criar novas artes.
 
-- **Restauração Completa**: Remoção de ruídos, riscos e rasgos em fotos antigas.
-- **Colorização Inteligente**: Transforme fotos P&B em coloridas com tons naturais.
-- **Aprimoramento de Qualidade**: Upscale e melhoria de nitidez via IA.
-- **Mesclagem de Pessoas (Merge)**: Fusão criativa entre duas imagens.
-- **Geração de Arte**: Criação de novas imagens a partir de texto com referências visuais.
-- **Concierge IA**: Chat assistente para ajudar no processo de restauração.
+## 🚀 Funcionalidades Principais
 
-## 🛠️ Tecnologias
+- **🛡️ Restauração**: Repara danos físicos, remove riscos e limpa ruídos de fotos antigas.
+- **🎨 Colorização**: Aplica cores naturais e realistas a fotos monocromáticas.
+- **✨ Aprimoramento**: Melhora a nitidez e a definição de detalhes usando Super Resolution.
+- **🧬 Mesclagem (Merge)**: Funde características de duas fotos diferentes em uma nova imagem única.
+- **🖼️ Geração Criativa**: Gera imagens a partir de texto (1x, 2x ou 4x variações) com suporte a imagem de referência.
+- **🤖 Concierge IA**: Um chat assistente integrado para tirar dúvidas sobre o processo de restauração.
 
-- **Frontend**: React 19, Tailwind CSS, Lucide React.
-- **IA**: Google Gemini API (modelos `gemini-2.5-flash-image` e `gemini-3-flash-preview`).
-- **Backend**: Vercel Serverless Functions (Node.js).
-- **Arquitetura**: Fallback inteligente entre execução local (AI Studio) e remota (Vercel API Routes).
+## 🛠️ Stack Tecnológica
 
-## 🚀 Como fazer o Deploy (Vercel)
+- **Frontend**: React 19 + Tailwind CSS
+- **Iconografia**: Lucide React
+- **IA/Engine**: Google Gemini API (`gemini-2.5-flash-image` & `gemini-3-flash-preview`)
+- **Backend**: Vercel Serverless Functions (Node.js 20)
+- **Segurança**: Arquitetura BFF que protege a API Key no lado do servidor.
 
-1. Faça o fork ou upload deste código para um repositório no GitHub.
-2. No dashboard da **Vercel**, importe o projeto.
-3. Vá em **Settings > Environment Variables**.
-4. Adicione a chave `API_KEY` com o valor da sua API Key do Google Gemini (obtenha em [ai.google.dev](https://ai.google.dev/)).
-5. Clique em **Deploy**.
+## 📦 Deploy em 1 Minuto na Vercel
 
-## 💻 Desenvolvimento Local
+1. Clique em **New Project** no dashboard da Vercel.
+2. Importe seu repositório do GitHub.
+3. Configure as **Environment Variables**:
+   - `API_KEY`: Sua chave do Google Gemini (obtenha em [ai.google.dev](https://ai.google.dev/)).
+4. Clique em **Deploy**.
 
-O projeto foi configurado para funcionar diretamente no navegador usando módulos ES6. Para rodar localmente:
+## 💻 Como Rodar Localmente
 
 1. Clone o repositório.
 2. Instale as dependências: `npm install`.
-3. Certifique-se de que a variável de ambiente `API_KEY` esteja disponível ou configurada nas API Routes.
+3. Configure o arquivo `.env` com sua `API_KEY`.
+4. Inicie o servidor de desenvolvimento: `npm run dev`.
 
 ---
-*Homenagem: "Para conservar a memória de quem nos trouxe até aqui. S2 Ilma."*
+*Desenvolvido com carinho e tecnologia para preservar o que realmente importa.*

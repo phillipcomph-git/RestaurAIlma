@@ -1,9 +1,11 @@
 {
-  "buildCommand": "bash build-vercel.sh",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "dist/api/index.js": {
-      "runtime": "nodejs20.x"
+    "api/**/*.js": {
+      "runtime": "nodejs20.x",
+      "memory": 1024,
+      "maxDuration": 60
     }
   }
 }

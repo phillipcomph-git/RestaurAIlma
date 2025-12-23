@@ -16,7 +16,7 @@ export function useImageProcessing() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro no processamento remoto.');
+        throw new Error(errorData.error || 'Erro no servidor Next.js.');
       }
 
       return await response.json();

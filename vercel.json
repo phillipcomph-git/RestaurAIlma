@@ -1,10 +1,9 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "bash build-vercel.sh",
   "outputDirectory": "dist",
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/"
+  "functions": {
+    "dist/api/index.js": {
+      "runtime": "nodejs20.x"
     }
-  ]
+  }
 }

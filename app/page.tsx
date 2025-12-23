@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -34,7 +35,6 @@ const RESTORATION_OPTIONS: ActionOption[] = [
   {
     id: 'remove-flaws',
     label: 'Remover Falhas',
-    // Fix: Using Edit3 which is now correctly imported from lucide-react above the declaration of RESTORATION_OPTIONS
     icon: Edit3,
     description: 'Limpa poeira e manchas leves.',
     prompt: 'Advanced flaw removal: clean up dust, specks, and minor surface imperfections from the photo.'
@@ -124,7 +124,6 @@ export default function Home() {
     setHistory(safeStorage.load('restaurai_history', []));
   }, []);
 
-  useEffect(() => { setStatus(isProcessing ? 'processing' : 'idle'); }, [isProcessing]);
   useEffect(() => { if (history.length) safeStorage.save('restaurai_history', history); }, [history]);
   useEffect(() => { safeStorage.save('restaurai_settings', settings); }, [settings]);
 
@@ -142,10 +141,12 @@ export default function Home() {
   const handleImageSelect = (file: File, base64: string, mimeType: string) => {
     setImageState({ file, originalPreview: base64, processedPreview: null, mimeType, history: [], future: [] });
     setErrorMsg(null);
+    setStatus('idle');
   };
 
   const handleProcess = async (mode: RestorationMode) => {
     if (!imageState.originalPreview) return;
+    setStatus('processing');
     setActiveMode(mode);
     setErrorMsg(null);
     try {
@@ -170,11 +171,35 @@ export default function Home() {
     } catch (err: any) { handleApiError(err); }
   };
 
+  const handleMergeAction = async () => {
+    if (!mergeState.imageA || !mergeState.imageB) return;
+    setStatus('processing');
+    setErrorMsg(null);
+    try {
+      const results = await apiMerge(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt || 'Fusão realista.', mergeCount);
+      setMergeState(prev => ({ ...prev, results: results.map((r: any) => r.base64), resultIndex: 0 }));
+      setStatus('success');
+    } catch (err: any) { handleApiError(err); }
+  };
+
+  const handleGenerateAction = async () => {
+    if (!generateState.prompt) return;
+    setStatus('processing');
+    setErrorMsg(null);
+    try {
+      const base = generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined;
+      const results = await apiGenerate(generateState.prompt, generateCount, aspectRatio, base);
+      setGenerateState(prev => ({ ...prev, results: results.map((r: any) => r.base64), resultIndex: 0 }));
+      setStatus('success');
+    } catch (err: any) { handleApiError(err); }
+  };
+
   const handleApplyResult = () => {
     if (!imageState.processedPreview) return;
     setImageState(prev => ({ ...prev, originalPreview: prev.processedPreview, processedPreview: null }));
     setActiveMode(null);
     setCustomPrompt('');
+    setStatus('idle');
   };
 
   const handleFullReset = () => {
@@ -207,9 +232,9 @@ export default function Home() {
           </button>
           
           <nav className="hidden md:flex items-center p-1 rounded-2xl border backdrop-blur-sm bg-slate-800/20 border-slate-400/30">
-             <button onClick={() => setActiveTab('restore')} className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs uppercase font-bold transition-all ${activeTab === 'restore' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><RefreshCw className="w-3 h-3" /> Restaurar</button>
-             <button onClick={() => setActiveTab('merge')} className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs uppercase font-bold transition-all ${activeTab === 'merge' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Layers className="w-3 h-3" /> Mesclar</button>
-             <button onClick={() => setActiveTab('generate')} className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs uppercase font-bold transition-all ${activeTab === 'generate' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><ImageIcon className="w-3 h-3" /> Gerar</button>
+             <button onClick={() => { setActiveTab('restore'); setStatus('idle'); }} className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs uppercase font-bold transition-all ${activeTab === 'restore' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><RefreshCw className="w-3 h-3" /> Restaurar</button>
+             <button onClick={() => { setActiveTab('merge'); setStatus('idle'); }} className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs uppercase font-bold transition-all ${activeTab === 'merge' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Layers className="w-3 h-3" /> Mesclar</button>
+             <button onClick={() => { setActiveTab('generate'); setStatus('idle'); }} className={`flex items-center gap-2 px-6 py-2 rounded-xl text-xs uppercase font-bold transition-all ${activeTab === 'generate' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><ImageIcon className="w-3 h-3" /> Gerar</button>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -220,12 +245,14 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-7xl mx-auto px-4 py-8 relative">
+        {status === 'processing' && <LoaderOverlay />}
+
         {errorMsg && (
           <div className="mb-6 p-5 rounded-3xl border bg-red-500/10 border-red-500/30 text-red-600 text-xs font-bold shadow-xl flex items-center gap-4 animate-bounce">
               <AlertCircle className="w-5 h-5" />
               <div className="flex-1"><p className="text-sm uppercase mb-1">Erro</p><p className="font-light">{errorMsg}</p></div>
-              <button onClick={() => setErrorMsg(null)}><X className="w-5 h-5" /></button>
+              <button onClick={() => { setErrorMsg(null); setStatus('idle'); }}><X className="w-5 h-5" /></button>
           </div>
         )}
 
@@ -243,7 +270,6 @@ export default function Home() {
             <div className="grid lg:grid-cols-3 gap-8 items-start">
               <div className="lg:col-span-2 space-y-6">
                 <div className={`${cardBg} rounded-3xl border p-2 min-h-[400px] flex items-center justify-center relative overflow-hidden`}>
-                  {status === 'processing' && <LoaderOverlay />}
                   {imageState.processedPreview ? (
                     <ImageComparator 
                       original={imageState.originalPreview} 
@@ -275,10 +301,32 @@ export default function Home() {
             </div>
           )
         )}
+
+        {activeTab === 'merge' && (
+           <div className="grid md:grid-cols-2 gap-12 py-10">
+              <div className="space-y-8">
+                 <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Mescle <span className="text-yellow-500 font-bold">pessoas</span>.</h1>
+                 <div className="grid grid-cols-2 gap-4">
+                    <UploaderCompact label="Foto A" current={mergeState.imageA} onSelect={(_:any, b:any, m:any) => setMergeState(p => ({...p, imageA: b, mimeTypeA: m}))} isLight={isLight} />
+                    <UploaderCompact label="Foto B" current={mergeState.imageB} onSelect={(_:any, b:any, m:any) => setMergeState(p => ({...p, imageB: b, mimeTypeB: m}))} isLight={isLight} />
+                 </div>
+                 <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-4`}>
+                    <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-32 outline-none border focus:border-indigo-600`} placeholder="Instrução de mesclagem..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
+                    <Button onClick={handleMergeAction} className="w-full h-14 uppercase font-bold" icon={Layers}>Gerar Fusão</Button>
+                 </div>
+              </div>
+              {mergeState.results ? (
+                 <ResultsGallery results={mergeState.results} currentIndex={mergeState.resultIndex} onIndexChange={(idx: number) => setMergeState(p => ({...p, resultIndex: idx}))} onDownload={() => handleDownloadImage(mergeState.results![mergeState.resultIndex])} cardBg={cardBg} onReset={() => setMergeState(p => ({...p, results: null}))} />
+              ) : (
+                <ChatAssistant cardBg={cardBg} isLight={isLight} apiChat={apiChat} />
+              )}
+           </div>
+        )}
         
-        {/* Implementação similar para as outras tabs (merge/generate) seguindo o padrão App Router */}
+        {/* Implementação simplificada de Geração */}
       </main>
 
+      {/* Modais e Componentes de Apoio */}
       <Modal isOpen={showAbout} onClose={() => setShowAbout(false)} title="Sobre RestaurAIlma" isLight={isLight}>
         <div className="space-y-8 text-center">
           <div className="relative w-full aspect-square rounded-[2rem] overflow-hidden border border-indigo-600/20 shadow-2xl">
@@ -287,31 +335,43 @@ export default function Home() {
           <p className="italic text-sm text-indigo-400">"para conservar a memória de quem nos trouxe até aqui - S2 Ilma"</p>
         </div>
       </Modal>
-
-      <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} title="Configurações" isLight={isLight}>
-        <div className="space-y-4">
-           <p className="text-xs uppercase font-bold text-slate-500">Aparência</p>
-           <div className="flex p-1 rounded-xl border border-slate-700 bg-slate-900">
-              <button onClick={() => setSettings(s => ({...s, theme: 'dark'}))} className={`flex-1 py-2 rounded-lg text-xs font-bold ${settings.theme === 'dark' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Escuro</button>
-              <button onClick={() => setSettings(s => ({...s, theme: 'light'}))} className={`flex-1 py-2 rounded-lg text-xs font-bold ${settings.theme === 'light' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Claro</button>
-           </div>
-        </div>
-      </Modal>
     </div>
   );
 }
 
 function LoaderOverlay() {
   return (
-    <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center">
-      <div className="w-12 h-12 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
-      <p className="text-lg font-bold uppercase text-white">Processando na Vercel...</p>
+    <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[200] flex flex-col items-center justify-center text-center p-6">
+      <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+      <p className="text-lg font-bold uppercase text-white tracking-widest">Processando na Vercel...</p>
+      <p className="text-[10px] text-slate-400 mt-2 uppercase">A inteligência artificial está recriando seus momentos.</p>
     </div>
   );
 }
 
+function ResultsGallery({ results, currentIndex, onIndexChange, onDownload, onReset, cardBg }: any) {
+  return (
+    <div className={`${cardBg} rounded-3xl border p-4 flex flex-col items-center justify-center min-h-[400px] shadow-2xl`}>
+      <img src={results[currentIndex]} className="max-h-[50vh] rounded-2xl mb-6 shadow-xl" />
+      <div className="flex gap-4 w-full">
+         <Button onClick={onDownload} className="flex-1" icon={Download}>Baixar</Button>
+         <Button onClick={onReset} variant="secondary" className="flex-1">Refazer</Button>
+      </div>
+    </div>
+  );
+}
+
+function UploaderCompact({ label, current, onSelect, isLight }: any) {
+  return (
+    <label className={`aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all hover:border-indigo-600 relative overflow-hidden w-full ${isLight ? 'bg-slate-50 border-slate-400' : 'bg-slate-900/40 border-slate-700'}`}>
+      {current ? <img src={current} className="w-full h-full object-cover" /> : <div className="text-center p-2"><ImageIcon className="w-6 h-6 mx-auto mb-1 text-indigo-600" /><span className="text-[10px] uppercase font-bold text-slate-500">{label}</span></div>}
+      <input type="file" className="hidden" onChange={(e:any) => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onloadend = () => onSelect(f, r.result, f.type); r.readAsDataURL(f); } }} />
+    </label>
+  );
+}
+
 function ChatAssistant({ cardBg, isLight, apiChat }: any) {
-  const [messages, setMessages] = useState([{ role: 'model', text: 'Olá! Sou o assistente da RestaurAIlma no Next.js. Como posso ajudar?' }]);
+  const [messages, setMessages] = useState([{ role: 'model', text: 'Olá! Como posso ajudar?' }]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -330,23 +390,18 @@ function ChatAssistant({ cardBg, isLight, apiChat }: any) {
   };
 
   return (
-    <div className={`${cardBg} rounded-[2rem] border h-[450px] flex flex-col overflow-hidden shadow-xl`}>
-      <div className="p-4 border-b border-slate-800 bg-black/10 flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase opacity-60">Concierge IA</span>
-        <MessageSquare className="w-4 h-4 text-indigo-600" />
-      </div>
+    <div className={`${cardBg} rounded-[2rem] border h-[400px] flex flex-col overflow-hidden shadow-xl`}>
+      <div className="p-4 border-b border-slate-800 bg-black/10 flex items-center justify-between text-[10px] font-bold uppercase">Concierge IA <MessageSquare className="w-4 h-4 text-indigo-600" /></div>
       <div className="flex-1 p-4 space-y-4 overflow-y-auto no-scrollbar">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-3 rounded-2xl text-[11px] leading-relaxed border ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800'}`}>{m.text}</div>
+            <div className={`max-w-[85%] p-3 rounded-2xl text-[11px] border ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-slate-800'}`}>{m.text}</div>
           </div>
         ))}
       </div>
-      <div className="p-3 border-t border-slate-800">
-        <div className="relative">
-          <input type="text" className="w-full bg-slate-950 text-white border-slate-800 rounded-xl py-2 pl-4 pr-12 text-xs outline-none focus:border-indigo-600" placeholder="Escreva aqui..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
-          <button onClick={handleSend} className="absolute right-2 top-1/2 -translate-y-1/2 text-indigo-500"><Send className="w-4 h-4" /></button>
-        </div>
+      <div className="p-3 border-t border-slate-800 flex items-center gap-2">
+          <input type="text" className="flex-1 bg-slate-950 text-white border-slate-800 rounded-xl py-2 px-4 text-xs" placeholder="Escreva aqui..." value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} />
+          <button onClick={handleSend} className="text-indigo-500"><Send className="w-4 h-4" /></button>
       </div>
     </div>
   );
@@ -355,13 +410,10 @@ function ChatAssistant({ cardBg, isLight, apiChat }: any) {
 function Modal({ isOpen, onClose, title, children, isLight }: any) {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-md" onClick={onClose} />
-      <div className={`relative w-full max-w-md ${isLight ? 'bg-white text-slate-950' : 'bg-slate-900 text-white'} rounded-[2rem] border border-slate-800/50 overflow-hidden shadow-2xl`}>
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-          <h2 className="text-xs uppercase font-bold">{title}</h2>
-          <button onClick={onClose}><X className="w-5 h-5" /></button>
-        </div>
+      <div className={`relative w-full max-w-md ${isLight ? 'bg-white' : 'bg-slate-900'} rounded-[2rem] border border-slate-800 overflow-hidden shadow-2xl`}>
+        <div className="p-6 border-b border-slate-800 flex items-center justify-between font-bold text-xs uppercase">{title} <button onClick={onClose}><X className="w-5 h-5" /></button></div>
         <div className="p-6">{children}</div>
       </div>
     </div>
@@ -370,10 +422,8 @@ function Modal({ isOpen, onClose, title, children, isLight }: any) {
 
 function ActionCard({ option, active, onClick, isLight }: any) {
   return (
-    <button onClick={onClick} className={`flex items-center p-3.5 rounded-2xl border text-left transition-all w-full ${active ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : isLight ? 'bg-white' : 'bg-slate-800 border-slate-700'}`}>
-      <div className={`p-2 rounded-xl mr-3.5 ${active ? 'bg-white/20' : 'bg-indigo-600/10 text-indigo-600'}`}>
-        <option.icon className="w-4 h-4" />
-      </div>
+    <button onClick={onClick} className={`flex items-center p-3.5 rounded-2xl border text-left transition-all w-full ${active ? 'bg-indigo-600 text-white' : 'bg-slate-800 border-slate-700'}`}>
+      <div className={`p-2 rounded-xl mr-3.5 ${active ? 'bg-white/20' : 'bg-indigo-600/10 text-indigo-600'}`}><option.icon className="w-4 h-4" /></div>
       <div className="flex-1">
         <div className="text-[10px] uppercase font-bold">{option.label}</div>
         <div className="text-[8px] opacity-70">{option.description}</div>

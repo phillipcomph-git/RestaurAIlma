@@ -2,13 +2,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 
+export const maxDuration = 60; // Estende o tempo de execução para 60 segundos
+
 export async function POST(req: NextRequest) {
   try {
     const { base64Image, mimeType, prompt, model } = await req.json();
     const apiKey = process.env.API_KEY;
 
     if (!apiKey) {
-      return NextResponse.json({ error: 'API_KEY não configurada no servidor Vercel.' }, { status: 500 });
+      return NextResponse.json({ error: 'Chave de API (API_KEY) não configurada no ambiente da Vercel.' }, { status: 500 });
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -19,11 +21,11 @@ export async function POST(req: NextRequest) {
       contents: {
         parts: [
           { inlineData: { mimeType, data: cleanData } },
-          { text: `Restauração: ${prompt}. Mantenha feições originais e melhore a nitidez.` }
+          { text: `Restauração Profissional: ${prompt}. Recupere detalhes, remova ruído e melhore a nitidez preservando a identidade original.` }
         ]
       },
       config: {
-        systemInstruction: "Especialista em restauração fotográfica de memórias familiares.",
+        systemInstruction: "Você é um mestre em restauração fotográfica. Sua missão é recuperar fotos antigas, colorir e remover danos físicos mantendo a fidelidade das pessoas.",
         temperature: 0.1
       }
     });
@@ -36,12 +38,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         base64: `data:${imagePart.inlineData.mimeType || 'image/png'};base64,${imagePart.inlineData.data}`,
         model,
-        description: textPart?.text || "Processado com sucesso."
+        description: textPart?.text || "Imagem processada com sucesso."
       });
     }
 
-    return NextResponse.json({ error: 'Nenhuma imagem gerada pela IA.' }, { status: 500 });
+    return NextResponse.json({ error: 'A IA não conseguiu gerar a imagem processada.' }, { status: 500 });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Erro na API Route:", error);
+    return NextResponse.json({ error: error.message || 'Erro interno no servidor de imagem.' }, { status: 500 });
   }
 }

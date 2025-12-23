@@ -1,11 +1,4 @@
-
 {
   "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "functions": {
-    "app/api/**/route.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    }
-  }
+  "outputDirectory": ".next"
 }

@@ -27,11 +27,20 @@
   "include": [
     "next-env.d.ts",
     ".next/types/**/*.ts",
-    "**/*.ts",
-    "**/*.tsx"
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "components/**/*.ts",
+    "components/**/*.tsx",
+    "hooks/**/*.ts",
+    "types.ts"
   ],
   "exclude": [
     "node_modules",
+    "api",
+    "services",
+    "App.tsx",
+    "index.tsx",
+    "index.html",
     "vite.config.ts"
   ]
 }

@@ -8,7 +8,7 @@ import {
   Maximize2, ImageOff, Heart, Info, Send, Layers, 
   Image as ImageIcon, Undo2, Redo2, Download, Trash2,
   ChevronLeft, ChevronRight, AlertCircle, Square, RectangleHorizontal, Check,
-  Edit3
+  Edit3, Key, ExternalLink
 } from 'lucide-react';
 
 import { Uploader } from '../components/Uploader';
@@ -70,14 +70,29 @@ const RESTORATION_OPTIONS: ActionOption[] = [
 ];
 
 const LOGO_THUMBNAIL_URL = "https://drive.google.com/thumbnail?id=1FyVZ-9tvJCQ2-txXy2yZSbxWkATDwZsK&sz=w800";
-const ABOUT_CAROUSEL_IMAGES = [
-  "https://drive.google.com/thumbnail?id=1FyVZ-9tvJCQ2-txXy2yZSbxWkATDwZsK&sz=w800",
-  "https://drive.google.com/thumbnail?id=1qvU6V2KpAl60XSSCicKkmZI90WHNdX8Q&sz=w800",
-  "https://drive.google.com/thumbnail?id=16-788ZCK7vsexkBpYYwy7LEYG1QKrsi7&sz=w800",
-  "https://drive.google.com/thumbnail?id=1y8mt4eiQquA-LQ9dohIl3Uvp_g3xDgKK&sz=w800",
-  "https://drive.google.com/thumbnail?id=1ZxIgVQLxxnAoMYEZ8oZ3Pq7Cw50j1oeV&sz=w800",
-  "https://drive.google.com/thumbnail?id=1yKylSvOGMiF0ANi6JKntad68ewqWMCsZ&sz=w800",
-  "https://drive.google.com/thumbnail?id=1CylddNKFy5f2GzC83mma3U6RyIZ88VCc&sz=w800"
+
+// Showcase data for the carousel
+const ABOUT_SHOWCASE = [
+  {
+    url: "https://drive.google.com/thumbnail?id=1FyVZ-9tvJCQ2-txXy2yZSbxWkATDwZsK&sz=w800",
+    title: "Restauração Completa",
+    desc: "Remoção de rasgos e reconstrução facial inteligente."
+  },
+  {
+    url: "https://drive.google.com/thumbnail?id=1qvU6V2KpAl60XSSCicKkmZI90WHNdX8Q&sz=w800",
+    title: "Colorização Natural",
+    desc: "Transformando preto e branco em memórias vivas."
+  },
+  {
+    url: "https://drive.google.com/thumbnail?id=16-788ZCK7vsexkBpYYwy7LEYG1QKrsi7&sz=w800",
+    title: "Aprimoramento 4K",
+    desc: "Mais nitidez e resolução para fotos de baixa qualidade."
+  },
+  {
+    url: "https://drive.google.com/thumbnail?id=1y8mt4eiQquA-LQ9dohIl3Uvp_g3xDgKK&sz=w800",
+    title: "Remoção de Danos",
+    desc: "Limpeza de fungos, poeira e oxidação do tempo."
+  }
 ];
 
 const safeStorage = {
@@ -107,6 +122,7 @@ export default function Home() {
   const [activeMode, setActiveMode] = useState<RestorationMode | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isQuotaError, setIsQuotaError] = useState(false);
   
   const [generateState, setGenerateState] = useState<GenerateState>({
     prompt: '', baseImage: null, baseMimeType: null, results: null, resultIndex: 0
@@ -119,6 +135,18 @@ export default function Home() {
   const [showHistory, setShowHistory] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  useEffect(() => {
+    const checkApiKey = async () => {
+      if (typeof window !== 'undefined' && (window as any).aistudio && settings.preferredModel === 'gemini-3-pro-image-preview') {
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+          await (window as any).aistudio.openSelectKey();
+        }
+      }
+    };
+    checkApiKey();
+  }, [settings.preferredModel]);
 
   useEffect(() => {
     setSettings(safeStorage.load('restaurai_settings', { language: 'pt', theme: 'dark', preferredModel: 'gemini-2.5-flash-image' }));
@@ -135,13 +163,34 @@ export default function Home() {
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
   const handleApiError = (err: any) => {
-    setErrorMsg(err.message || "Erro de conexão com o servidor.");
+    const msg = err.message || "";
+    if (msg.includes('Requested entity was not found')) {
+      handleOpenKeyDialog();
+      return;
+    }
+    if (msg.includes('429') || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('exhausted')) {
+      setIsQuotaError(true);
+      setErrorMsg("Limite de uso atingido. O Google limita a quantidade de fotos que podemos processar gratuitamente por minuto.");
+    } else {
+      setErrorMsg(msg || "Erro de conexão com o servidor.");
+      setIsQuotaError(false);
+    }
     setStatus('error');
+  };
+
+  const handleOpenKeyDialog = async () => {
+    if (typeof window !== 'undefined' && (window as any).aistudio) {
+      await (window as any).aistudio.openSelectKey();
+      setErrorMsg(null);
+      setIsQuotaError(false);
+      setStatus('idle');
+    }
   };
 
   const handleImageSelect = (file: File, base64: string, mimeType: string) => {
     setImageState({ file, originalPreview: base64, processedPreview: null, mimeType, history: [], future: [] });
     setErrorMsg(null);
+    setIsQuotaError(false);
     setStatus('idle');
   };
 
@@ -150,6 +199,7 @@ export default function Home() {
     setStatus('processing');
     setActiveMode(mode);
     setErrorMsg(null);
+    setIsQuotaError(false);
     try {
       const toolPrompt = RESTORATION_OPTIONS.find(o => o.id === mode)?.prompt || '';
       const userContext = customPrompt.trim() ? `ADICIONAL: ${customPrompt}. ` : '';
@@ -176,6 +226,7 @@ export default function Home() {
     if (!mergeState.imageA || !mergeState.imageB) return;
     setStatus('processing');
     setErrorMsg(null);
+    setIsQuotaError(false);
     try {
       const results = await apiMerge(mergeState.imageA, mergeState.mimeTypeA, mergeState.imageB, mergeState.mimeTypeB, customPrompt || 'Fusão realista.', 1);
       setMergeState(prev => ({ ...prev, results: results.map((r: any) => r.base64), resultIndex: 0 }));
@@ -187,6 +238,7 @@ export default function Home() {
     if (!generateState.prompt.trim()) return;
     setStatus('processing');
     setErrorMsg(null);
+    setIsQuotaError(false);
     try {
       const base = generateState.baseImage ? { data: generateState.baseImage, mimeType: generateState.baseMimeType! } : undefined;
       const results = await apiGenerate(generateState.prompt, generateCount, aspectRatio, base);
@@ -210,6 +262,7 @@ export default function Home() {
     setStatus('idle');
     setCustomPrompt('');
     setErrorMsg(null);
+    setIsQuotaError(false);
   };
 
   const handleDownloadImage = (img: string | null) => {
@@ -234,12 +287,13 @@ export default function Home() {
           </button>
           
           <nav className="hidden md:flex items-center p-1 rounded-2xl border bg-slate-800/20 border-slate-400/30">
-             <button onClick={() => { setActiveTab('restore'); setStatus('idle'); }} className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${activeTab === 'restore' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Restauração</button>
-             <button onClick={() => { setActiveTab('merge'); setStatus('idle'); }} className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${activeTab === 'merge' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Mesclar</button>
-             <button onClick={() => { setActiveTab('generate'); setStatus('idle'); }} className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${activeTab === 'generate' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Gerar</button>
+             <button onClick={() => { setActiveTab('restore'); setStatus('idle'); setErrorMsg(null); }} className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${activeTab === 'restore' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Restauração</button>
+             <button onClick={() => { setActiveTab('merge'); setStatus('idle'); setErrorMsg(null); }} className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${activeTab === 'merge' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Mesclar</button>
+             <button onClick={() => { setActiveTab('generate'); setStatus('idle'); setErrorMsg(null); }} className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${activeTab === 'generate' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Gerar</button>
           </nav>
 
           <div className="flex items-center gap-2">
+            <button onClick={handleOpenKeyDialog} className={`p-2 ${utilityIconColor} hidden sm:block`} title="Trocar Chave de API"><Key className="w-5 h-5" /></button>
             <button onClick={() => setShowAbout(true)} className={`p-2 ${utilityIconColor}`}><Info className="w-5 h-5" /></button>
             <button onClick={() => setShowHistory(true)} className={`p-2 ${utilityIconColor}`}><History className="w-5 h-5" /></button>
             <button onClick={() => setShowSettings(true)} className={`p-2 ${utilityIconColor}`}><Settings className="w-5 h-5" /></button>
@@ -251,10 +305,21 @@ export default function Home() {
         {(isProcessing || status === 'processing') && <LoaderOverlay />}
 
         {errorMsg && (
-          <div className="mb-6 p-5 rounded-3xl border bg-red-500/10 border-red-500/30 text-red-600 text-xs font-bold shadow-xl flex items-center gap-4 animate-in slide-in-from-top-4">
-              <AlertCircle className="w-5 h-5" />
-              <div className="flex-1"><p className="text-sm uppercase mb-1">Atenção</p><p className="font-light">{errorMsg}</p></div>
-              <button onClick={() => setErrorMsg(null)}><X className="w-5 h-5" /></button>
+          <div className={`mb-6 p-6 rounded-[2rem] border shadow-2xl flex flex-col sm:flex-row items-center gap-6 animate-in slide-in-from-top-4 duration-500 ${isQuotaError ? 'bg-amber-500/10 border-amber-500/30 text-amber-600' : 'bg-red-500/10 border-red-500/30 text-red-600'}`}>
+              <div className={`p-3 rounded-2xl ${isQuotaError ? 'bg-amber-500' : 'bg-red-500'} text-white shadow-lg`}>
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div className="flex-1 text-center sm:text-left">
+                <p className="text-sm uppercase mb-1 font-black tracking-widest">{isQuotaError ? 'Limite de Uso (Quota)' : 'Atenção'}</p>
+                <p className="font-light text-xs sm:text-sm leading-relaxed">{errorMsg}</p>
+                {isQuotaError && (
+                  <div className="mt-4 flex flex-wrap gap-3 justify-center sm:justify-start">
+                    <button onClick={handleOpenKeyDialog} className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all shadow-lg"><Key className="w-4 h-4" /> Usar minha própria chave</button>
+                    <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="flex items-center gap-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-current rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border border-current/10">Docs <ExternalLink className="w-3 h-3" /></a>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => { setErrorMsg(null); setIsQuotaError(false); }} className="p-2 opacity-40 hover:opacity-100"><X className="w-5 h-5" /></button>
           </div>
         )}
 
@@ -392,7 +457,7 @@ export default function Home() {
 
       <nav className={`md:hidden fixed bottom-4 left-4 right-4 z-50 p-2 rounded-[2.5rem] border backdrop-blur-3xl flex justify-between shadow-2xl ${isLight ? 'bg-white/95 border-slate-300' : 'bg-slate-950/80 border-slate-800'}`}>
          {(['restore', 'merge', 'generate'] as AppTab[]).map(tab => (
-           <button key={tab} onClick={() => { setActiveTab(tab); setStatus('idle'); }} className={`flex-1 py-4 flex flex-col items-center gap-1.5 rounded-[2rem] transition-all ${activeTab === tab ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500'}`}>
+           <button key={tab} onClick={() => { setActiveTab(tab); setStatus('idle'); setErrorMsg(null); }} className={`flex-1 py-4 flex flex-col items-center gap-1.5 rounded-[2rem] transition-all ${activeTab === tab ? 'bg-indigo-600 text-white shadow-xl' : 'text-slate-500'}`}>
              {tab === 'restore' ? <RotateCcw className="w-5 h-5" /> : tab === 'merge' ? <Layers className="w-5 h-5" /> : <ImageIcon className="w-5 h-5" />}
              <span className="text-[8px] uppercase font-bold tracking-widest">{tab === 'restore' ? 'Restaurar' : tab === 'merge' ? 'Mesclar' : 'Gerar'}</span>
            </button>
@@ -401,14 +466,20 @@ export default function Home() {
 
       <Modal isOpen={showAbout} onClose={() => setShowAbout(false)} title="Sobre RestaurAIlma" isLight={isLight}>
         <div className="space-y-8 text-center">
-          <div className="aspect-square rounded-[2rem] overflow-hidden border border-indigo-600/20 relative shadow-2xl">
-            <AboutCarousel images={ABOUT_CAROUSEL_IMAGES} />
+          <div className="aspect-square rounded-[2rem] overflow-hidden border border-indigo-600/20 relative shadow-2xl bg-black">
+            <AboutCarousel showcase={ABOUT_SHOWCASE} />
           </div>
-          <p className="italic text-sm text-indigo-400">"Para conservar a memória de quem nos trouxe até aqui. Em homenagem à Ilma."</p>
+          <div className="space-y-4 px-2">
+            <h4 className="text-indigo-400 font-bold uppercase text-[10px] tracking-widest">A Nossa Missão</h4>
+            <p className="text-sm font-light leading-relaxed opacity-80">
+              A <strong>RestaurAIlma</strong> nasceu para eternizar o que o tempo tenta apagar. Usamos tecnologia de ponta para devolver a cor e o detalhe às suas memórias mais valiosas.
+            </p>
+            <p className="italic text-xs text-indigo-500/60 pt-4">"Em homenagem à Ilma, cujo brilho nunca se apagará."</p>
+          </div>
           <div className="flex justify-center gap-4 text-[9px] font-bold uppercase tracking-widest opacity-40">
-            <span>v2.5.0-STABLE</span>
+            <span>v2.7.0-PRO-SHOWCASE</span>
             <span>•</span>
-            <span>Gemini AI Engine</span>
+            <span>Gemini IA Engine</span>
           </div>
         </div>
       </Modal>
@@ -449,12 +520,13 @@ export default function Home() {
             <select 
               value={settings.preferredModel}
               onChange={e => setSettings(s => ({ ...s, preferredModel: e.target.value }))}
-              className={`w-full ${isLight ? 'bg-slate-100' : 'bg-slate-800'} border border-white/5 rounded-2xl p-4 text-xs outline-none focus:border-indigo-500`}
+              className={`w-full ${isLight ? 'bg-slate-100 text-slate-900 border-slate-300' : 'bg-slate-800 text-white border-white/5'} rounded-2xl p-4 text-xs outline-none focus:border-indigo-500`}
             >
               <option value="gemini-2.5-flash-image">Gemini 2.5 Flash (Rápido)</option>
-              <option value="gemini-3-pro-image-preview">Gemini 3 Pro (Alta Qualidade)</option>
+              <option value="gemini-3-pro-image-preview">Gemini 3 Pro (Alta Qualidade - Requer Chave Própria)</option>
             </select>
           </div>
+          <Button onClick={handleOpenKeyDialog} className="w-full h-14 bg-amber-600 hover:bg-amber-500" icon={Key}>Trocar Chave de API</Button>
         </div>
       </Modal>
     </div>
@@ -514,7 +586,7 @@ function ChatAssistant({ cardBg, isLight, apiChat }: any) {
       <div ref={scrollRef} className="flex-1 p-5 space-y-4 overflow-y-auto no-scrollbar scroll-smooth">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-4 rounded-2xl text-[11px] leading-relaxed border ${m.role === 'user' ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg' : 'bg-white/5 border-white/10 text-slate-200'}`}>
+            <div className={`max-w-[85%] p-4 rounded-2xl text-[11px] border ${m.role === 'user' ? 'bg-indigo-600 text-white border-indigo-400 shadow-lg' : 'bg-white/5 border-white/10 text-slate-200'}`}>
               {m.text}
             </div>
           </div>
@@ -523,7 +595,7 @@ function ChatAssistant({ cardBg, isLight, apiChat }: any) {
       </div>
       <div className="p-4 border-t border-white/5 bg-black/5 flex gap-2">
         <input 
-          className={`flex-1 ${isLight ? 'bg-white' : 'bg-slate-950'} rounded-2xl px-5 py-3 text-xs outline-none border border-white/5 focus:border-indigo-600 transition-all shadow-inner`}
+          className={`flex-1 ${isLight ? 'bg-white text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-white/5'} rounded-2xl px-5 py-3 text-xs outline-none border focus:border-indigo-600 transition-all shadow-inner`}
           placeholder="Tire suas dúvidas..."
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -591,7 +663,7 @@ function UploaderCompact({ label, current, onSelect, isLight }: any) {
   );
 }
 
-function AboutCarousel({ images }: { images: string[] }) {
+function AboutCarousel({ showcase }: { showcase: Array<{url: string, title: string, desc: string}> }) {
   const [idx, setIdx] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const intervalRef = useRef<any>(null);
@@ -599,64 +671,80 @@ function AboutCarousel({ images }: { images: string[] }) {
   const startInterval = () => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => {
-      setIdx(p => (p + 1) % images.length);
-    }, 4000);
+      setIdx(p => (p + 1) % showcase.length);
+    }, 5000);
   };
 
   useEffect(() => {
     startInterval();
     return () => clearInterval(intervalRef.current);
-  }, [images.length]);
+  }, [showcase.length]);
 
-  const goToNext = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIdx(p => (p + 1) % images.length);
+  const goToNext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setIdx(p => (p + 1) % showcase.length);
     startInterval();
   };
 
-  const goToPrev = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIdx(p => (p - 1 + images.length) % images.length);
+  const goToPrev = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setIdx(p => (p - 1 + showcase.length) % showcase.length);
     startInterval();
   };
 
   return (
     <div 
-      className="relative w-full h-full group"
+      className="relative w-full h-full group bg-black"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {images.map((img, i) => (
-        <img 
-          key={i} 
-          src={img} 
-          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${idx === i ? 'opacity-100' : 'opacity-0'}`} 
-          alt="Exemplo"
-        />
+      {showcase.map((item, i) => (
+        <div 
+          key={i}
+          className={`absolute inset-0 transition-all duration-1000 ${idx === i ? 'opacity-100 scale-100' : 'opacity-0 scale-110 pointer-events-none'}`}
+        >
+          <img 
+            src={item.url} 
+            className="w-full h-full object-cover opacity-60" 
+            alt={item.title}
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent flex flex-col justify-end p-8 text-left">
+            <h4 className="text-white font-bold text-lg mb-1">{item.title}</h4>
+            <p className="text-indigo-200/80 text-xs font-light">{item.desc}</p>
+          </div>
+        </div>
       ))}
       
+      {/* Controles */}
       <div className={`absolute inset-0 flex items-center justify-between px-4 transition-opacity duration-300 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
         <button 
           onClick={goToPrev}
-          className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/10 hover:bg-indigo-600 transition-all hover:scale-110"
+          className="p-3 rounded-full bg-white/10 backdrop-blur-md text-white border border-white/10 hover:bg-indigo-600 transition-all hover:scale-110"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
         <button 
           onClick={goToNext}
-          className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white border border-white/10 hover:bg-indigo-600 transition-all hover:scale-110"
+          className="p-3 rounded-full bg-white/10 backdrop-blur-md text-white border border-white/10 hover:bg-indigo-600 transition-all hover:scale-110"
         >
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>
 
-      <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2 px-4 pointer-events-none">
-        {images.map((_, i) => (
-          <div 
+      {/* Indicadores */}
+      <div className="absolute top-6 left-0 right-0 flex justify-center gap-2 px-4">
+        {showcase.map((_, i) => (
+          <button 
             key={i} 
-            className={`h-1 rounded-full transition-all duration-500 ${idx === i ? 'w-8 bg-indigo-500 shadow-[0_0_10px_rgba(79,70,229,0.8)]' : 'w-2 bg-white/20'}`}
+            onClick={() => { setIdx(i); startInterval(); }}
+            className={`h-1 transition-all duration-500 rounded-full ${idx === i ? 'w-10 bg-indigo-500 shadow-[0_0_10px_rgba(79,70,229,0.8)]' : 'w-4 bg-white/20 hover:bg-white/40'}`}
           />
         ))}
+      </div>
+
+      {/* Badge de Progresso */}
+      <div className="absolute bottom-6 right-6 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-[8px] font-bold text-white tracking-widest uppercase">
+        {idx + 1} / {showcase.length}
       </div>
     </div>
   );

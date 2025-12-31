@@ -60,7 +60,7 @@ export const ImageComparator: React.FC<ImageComparatorProps> = ({ original, proc
   const toggleFullScreen = () => setIsFullScreen(!isFullScreen);
 
   const containerClasses = isFullScreen
-    ? "fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-2 sm:p-8"
+    ? "fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-2"
     : "relative w-full h-full flex flex-col gap-3 md:gap-4";
 
   const imageWrapperClasses = isFullScreen

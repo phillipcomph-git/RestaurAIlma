@@ -104,13 +104,14 @@ export default function App() {
   const { processImage: apiProcess, mergeImages: apiMerge, generateImage: apiGenerate, chat: apiChat, isProcessing } = useImageProcessing();
   const [activeTab, setActiveTab] = useState<AppTab>('restore');
   const [imageState, setImageState] = useState<ImageState>({
-    file: null, originalPreview: null, processedPreview: null, mimeType: '', history: [], future: []
+    file: null, originalPreview: null, processedPreview: null, processedCandidates: [], mimeType: '', history: [], future: []
   });
   
   const [mergeState, setMergeState] = useState<MergeState>({
     imageA: null, imageB: null, mimeTypeA: '', mimeTypeB: '', results: null, resultIndex: 0
   });
   const [mergeCount, setMergeCount] = useState(1);
+  const [restoreCount, setRestoreCount] = useState(1);
   const [status, setStatus] = useState<ProcessingStatus>('idle');
   const [activeMode, setActiveMode] = useState<RestorationMode | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
@@ -127,6 +128,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>(() => safeStorage.load('restaurai_history', []));
+  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
   useEffect(() => { setStatus(isProcessing ? 'processing' : 'idle'); }, [isProcessing]);
   useEffect(() => { safeStorage.save('restaurai_history', history); }, [history]);
@@ -145,7 +147,7 @@ export default function App() {
   };
 
   const handleImageSelect = (file: File, base64: string, mimeType: string) => {
-    setImageState({ file, originalPreview: base64, processedPreview: null, mimeType, history: [], future: [] });
+    setImageState({ file, originalPreview: base64, processedPreview: null, processedCandidates: [], mimeType, history: [], future: [] });
     setErrorMsg(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -159,11 +161,18 @@ export default function App() {
       const userContext = customPrompt.trim() ? `ADICIONAL: ${customPrompt}. ` : '';
       const finalPrompt = `${userContext}${toolPrompt}`;
       
-      const result = await apiProcess(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel);
+      // Se for modo custom, usa o restoreCount selecionado, caso contrário 1
+      const count = mode === 'custom' ? restoreCount : 1;
+
+      const results = await apiProcess(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel, count);
       
+      const firstResult = results[0].base64;
+      const candidates = results.map(r => r.base64);
+
       setImageState(prev => ({ 
         ...prev, 
-        processedPreview: result.base64,
+        processedPreview: firstResult,
+        processedCandidates: candidates,
         history: [...prev.history, prev.originalPreview!],
         future: [] 
       }));
@@ -171,10 +180,10 @@ export default function App() {
       setHistory(prev => [{
         id: Date.now().toString(),
         original: imageState.originalPreview!,
-        processed: result.base64,
+        processed: firstResult,
         mode: RESTORATION_OPTIONS.find(o => o.id === mode)?.label || 'Personalizado',
         timestamp: Date.now(),
-        description: result.description
+        description: results[0].description
       }, ...prev].slice(0, 15));
       
       setStatus('success');
@@ -189,6 +198,7 @@ export default function App() {
       ...prev,
       originalPreview: prev.processedPreview,
       processedPreview: null,
+      processedCandidates: [],
       history: [...prev.history], 
       future: []
     }));
@@ -203,6 +213,7 @@ export default function App() {
       ...prev,
       originalPreview: last,
       processedPreview: null,
+      processedCandidates: [],
       future: [prev.originalPreview!, ...prev.future],
       history: prev.history.slice(0, -1)
     }));
@@ -215,13 +226,14 @@ export default function App() {
       ...prev,
       originalPreview: next,
       processedPreview: null,
+      processedCandidates: [],
       history: [...prev.history, prev.originalPreview!],
       future: prev.future.slice(1)
     }));
   };
 
   const handleFullReset = () => {
-    setImageState({ file: null, originalPreview: null, processedPreview: null, mimeType: '', history: [], future: [] });
+    setImageState({ file: null, originalPreview: null, processedPreview: null, processedCandidates: [], mimeType: '', history: [], future: [] });
     setMergeState({ imageA: null, imageB: null, mimeTypeA: '', mimeTypeB: '', results: null, resultIndex: 0 });
     setGenerateState({ prompt: '', baseImage: null, baseMimeType: null, results: null, resultIndex: 0 });
     setStatus('idle');
@@ -329,6 +341,23 @@ export default function App() {
                     <img src={imageState.originalPreview} className="max-h-[70vh] rounded-xl shadow-xl" alt="Preview" />
                   )}
                 </div>
+
+                {/* Miniaturas das variações se houver mais de uma */}
+                {imageState.processedCandidates && imageState.processedCandidates.length > 1 && (
+                  <div className={`flex justify-center gap-3 p-3 rounded-2xl border ${isLight ? 'bg-white border-slate-300' : 'bg-slate-900 border-slate-700'}`}>
+                    {imageState.processedCandidates.map((src, idx) => (
+                       <button 
+                          key={idx}
+                          onClick={() => setImageState(p => ({...p, processedPreview: src}))}
+                          className={`relative w-16 h-16 rounded-xl overflow-hidden border-2 transition-all ${imageState.processedPreview === src ? 'border-indigo-600 scale-110 shadow-lg' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                       >
+                         <img src={src} className="w-full h-full object-cover" />
+                         <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[8px] px-1">{idx + 1}x</span>
+                       </button>
+                    ))}
+                  </div>
+                )}
+
                 {imageState.processedPreview && (
                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
                       <Button onClick={handleApplyResult} variant="primary" className="h-14 px-10 uppercase text-xs font-bold w-full sm:w-auto bg-green-600 hover:bg-green-500" icon={Check}>Aplicar</Button>
@@ -345,9 +374,19 @@ export default function App() {
                         <button onClick={handleRedo} disabled={imageState.future.length === 0} className="p-2 rounded-lg disabled:opacity-20"><Redo2 className="w-4 h-4" /></button>
                       </div>
                    </div>
-                   <div className="relative group">
+                   <div className="relative group space-y-4">
                      <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600`} placeholder="Instrução personalizada..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
-                     <button onClick={() => handleProcess('custom')} disabled={!customPrompt.trim() || status === 'processing'} className="absolute right-2 bottom-2 p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg disabled:opacity-50"><Sparkles className="w-4 h-4" /></button>
+                     
+                     <div className="flex items-center justify-between">
+                        <div className={`text-[9px] uppercase font-bold tracking-elegant ${textSub}`}>Variações</div>
+                        <div className={`flex p-0.5 rounded-lg border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
+                            {[1, 2, 4].map(n => (
+                              <button key={n} onClick={() => setRestoreCount(n)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${restoreCount === n ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}>{n}x</button>
+                            ))}
+                        </div>
+                     </div>
+
+                     <Button onClick={() => handleProcess('custom')} disabled={!customPrompt.trim() || status === 'processing'} className="w-full" variant="primary" icon={Sparkles}>Gerar</Button>
                    </div>
                 </div>
                 <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
@@ -443,6 +482,7 @@ export default function App() {
          ))}
       </nav>
 
+      {/* Histórico e Outros Modais */}
       <Modal isOpen={showAbout} onClose={() => setShowAbout(false)} title="Sobre RestaurAIlma" isLight={isLight}>
         <div className="space-y-8 text-center">
           <div className="relative w-full aspect-square rounded-[2rem] overflow-hidden border border-indigo-600/20 shadow-2xl">
@@ -464,12 +504,19 @@ export default function App() {
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 no-scrollbar">
             {history.map((item) => (
               <div key={item.id} className={`flex gap-4 p-3 rounded-2xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/40 border-slate-700/50'}`}>
-                <div className="w-16 h-16 overflow-hidden rounded-xl border border-slate-700 shrink-0"><img src={item.processed} className="w-full h-full object-cover" /></div>
+                <div 
+                  className={`w-16 h-16 overflow-hidden rounded-xl border border-slate-700 shrink-0 cursor-pointer transition-all hover:scale-105 hover:border-indigo-500`} 
+                  onClick={() => setFullScreenImage(item.processed)}
+                  title="Ver em tela cheia"
+                >
+                  <img src={item.processed} className="w-full h-full object-cover" />
+                </div>
                 <div className="flex-1 flex flex-col justify-center">
                   <div className="text-[9px] uppercase font-bold mb-1 text-indigo-400">{item.mode}</div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleDownloadImage(item.processed)} className="p-1.5 rounded-lg hover:bg-indigo-600"><Download className="w-3 h-3 text-white" /></button>
-                    <button onClick={() => setHistory(h => h.filter(x => x.id !== item.id))} className="p-1.5 rounded-lg hover:bg-red-600"><Trash2 className="w-3 h-3 text-white" /></button>
+                    <button onClick={() => setFullScreenImage(item.processed)} className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-500 hover:text-white hover:bg-indigo-600 transition-colors" title="Tela cheia"><Maximize2 className="w-3 h-3" /></button>
+                    <button onClick={() => handleDownloadImage(item.processed)} className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-500 hover:text-white hover:bg-indigo-600 transition-colors" title="Baixar"><Download className="w-3 h-3" /></button>
+                    <button onClick={() => setHistory(h => h.filter(x => x.id !== item.id))} className="p-1.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-500 hover:text-white hover:bg-red-600 transition-colors" title="Apagar"><Trash2 className="w-3 h-3" /></button>
                   </div>
                 </div>
               </div>
@@ -487,6 +534,21 @@ export default function App() {
            </div>
         </div>
       </Modal>
+
+      {/* Full Screen Image Overlay */}
+      {fullScreenImage && (
+        <div className="fixed inset-0 z-[300] bg-black/95 flex flex-col items-center justify-center p-2 md:p-4 animate-in zoom-in-95 duration-200" onClick={() => setFullScreenImage(null)}>
+            <button onClick={() => setFullScreenImage(null)} className="absolute top-4 right-4 z-50 p-3 bg-black/50 hover:bg-white/20 rounded-full text-white/80 hover:text-white backdrop-blur-sm transition-all"><X className="w-6 h-6" /></button>
+            <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                <img src={fullScreenImage} className="max-w-full max-h-full object-contain rounded-md shadow-2xl" onClick={(e) => e.stopPropagation()} />
+            </div>
+            <div className="absolute bottom-6 flex gap-4 z-50" onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => handleDownloadImage(fullScreenImage)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3 rounded-2xl font-bold uppercase text-xs tracking-widest flex items-center gap-2 shadow-xl shadow-indigo-900/20 transition-transform hover:scale-105 border border-indigo-400/20 backdrop-blur-md">
+                    <Download className="w-4 h-4" /> Baixar
+                </button>
+            </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -502,25 +564,39 @@ function LoaderOverlay() {
 }
 
 function ResultsGallery({ results, currentIndex, onIndexChange, onDownload, onReset, cardBg }: any) {
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
   return (
-    <div className={`${cardBg} rounded-3xl border p-4 flex flex-col items-center justify-center min-h-[400px] shadow-2xl relative animate-in zoom-in-95 duration-500`}>
-      <div className="relative group w-full flex flex-col items-center">
-        <div className="relative w-full aspect-square flex items-center justify-center bg-black/5 rounded-2xl overflow-hidden mb-4 border border-white/5">
-           <img src={results[currentIndex]} className="max-h-full max-w-full object-contain shadow-xl" />
-        </div>
-        {results.length > 1 && (
-          <div className="flex gap-4 mb-4">
-            <button onClick={() => onIndexChange((currentIndex - 1 + results.length) % results.length)} className="p-2 bg-slate-800 rounded-full text-white hover:bg-indigo-600 transition-colors"><ChevronLeft /></button>
-            <span className="flex items-center text-xs font-bold uppercase tabular-nums tracking-widest">{currentIndex + 1} / {results.length}</span>
-            <button onClick={() => onIndexChange((currentIndex + 1) % results.length)} className="p-2 bg-slate-800 rounded-full text-white hover:bg-indigo-600 transition-colors"><ChevronRight /></button>
+    <>
+      <div className={`${cardBg} rounded-3xl border p-4 flex flex-col items-center justify-center min-h-[400px] shadow-2xl relative animate-in zoom-in-95 duration-500`}>
+        <div className="relative group w-full flex flex-col items-center">
+          <div className="relative w-full aspect-square flex items-center justify-center bg-black/5 rounded-2xl overflow-hidden mb-4 border border-white/5">
+             <img src={results[currentIndex]} className="max-h-full max-w-full object-contain shadow-xl" />
+             <button onClick={() => setIsFullScreen(true)} className="absolute top-2 right-2 p-2 bg-black/60 rounded-full text-white hover:bg-indigo-600 transition-colors opacity-0 group-hover:opacity-100"><Maximize2 className="w-4 h-4" /></button>
           </div>
-        )}
+          {results.length > 1 && (
+            <div className="flex gap-4 mb-4">
+              <button onClick={() => onIndexChange((currentIndex - 1 + results.length) % results.length)} className="p-2 bg-slate-800 rounded-full text-white hover:bg-indigo-600 transition-colors"><ChevronLeft /></button>
+              <span className="flex items-center text-xs font-bold uppercase tabular-nums tracking-widest">{currentIndex + 1} / {results.length}</span>
+              <button onClick={() => onIndexChange((currentIndex + 1) % results.length)} className="p-2 bg-slate-800 rounded-full text-white hover:bg-indigo-600 transition-colors"><ChevronRight /></button>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-4 w-full">
+           <Button onClick={onDownload} variant="primary" className="flex-1 h-12 uppercase text-xs font-bold" icon={Download}>Baixar</Button>
+           <Button onClick={onReset} variant="secondary" className="flex-1 h-12 uppercase text-xs font-bold">Refazer</Button>
+        </div>
       </div>
-      <div className="flex gap-4 w-full">
-         <Button onClick={onDownload} variant="primary" className="flex-1 h-12 uppercase text-xs font-bold" icon={Download}>Baixar</Button>
-         <Button onClick={onReset} variant="secondary" className="flex-1 h-12 uppercase text-xs font-bold">Refazer</Button>
-      </div>
-    </div>
+
+      {isFullScreen && (
+        <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center p-2 md:p-4">
+           <button onClick={() => setIsFullScreen(false)} className="absolute top-4 right-4 z-50 p-3 bg-black/50 hover:bg-white/20 rounded-full text-white/80 hover:text-white backdrop-blur-sm transition-all"><X className="w-6 h-6" /></button>
+           <div className="w-full h-full flex items-center justify-center overflow-hidden">
+             <img src={results[currentIndex]} className="max-w-full max-h-full object-contain" />
+           </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -612,16 +688,51 @@ function UploaderCompact({ label, current, onSelect, isLight }: any) {
 
 function AboutCarousel({ images }: { images: string[] }) {
   const [index, setIndex] = useState(0);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  
   useEffect(() => {
+    if (isFullScreen) return; // Pausa o auto-play no fullscreen
     const timer = setInterval(() => { setIndex(p => (p + 1) % images.length); }, 4000);
     return () => clearInterval(timer);
-  }, [images.length]);
+  }, [images.length, isFullScreen]);
+
+  const handlePrev = (e: React.MouseEvent) => { e.stopPropagation(); setIndex(p => (p - 1 + images.length) % images.length); };
+  const handleNext = (e: React.MouseEvent) => { e.stopPropagation(); setIndex(p => (p + 1) % images.length); };
+
   return (
-    <div className="w-full h-full relative">
-      {images.map((img, i) => (
-        <img key={i} src={img} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${index === i ? 'opacity-100' : 'opacity-0'}`} />
-      ))}
-    </div>
+    <>
+      <div className="w-full h-full relative group">
+        {images.map((img, i) => (
+          <img key={i} src={img} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${index === i ? 'opacity-100' : 'opacity-0'}`} />
+        ))}
+        {/* Controles de Navegação */}
+        <div className="absolute inset-0 flex items-center justify-between p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+           <button onClick={handlePrev} className="p-1 bg-black/50 rounded-full text-white hover:bg-indigo-600"><ChevronLeft className="w-5 h-5" /></button>
+           <button onClick={handleNext} className="p-1 bg-black/50 rounded-full text-white hover:bg-indigo-600"><ChevronRight className="w-5 h-5" /></button>
+        </div>
+        {/* Botão Fullscreen */}
+        <button onClick={() => setIsFullScreen(true)} className="absolute bottom-3 right-3 p-2 bg-black/50 rounded-full text-white hover:bg-indigo-600 opacity-0 group-hover:opacity-100 transition-all">
+           <Maximize2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      {isFullScreen && (
+        <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center p-2 md:p-4">
+           <button onClick={() => setIsFullScreen(false)} className="absolute top-4 right-4 z-50 p-3 bg-black/50 hover:bg-white/20 rounded-full text-white/80 hover:text-white backdrop-blur-sm transition-all"><X className="w-6 h-6" /></button>
+           
+           <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+             <img src={images[index]} className="max-w-full max-h-full object-contain" />
+             
+             <button onClick={handlePrev} className="absolute left-2 md:left-4 p-3 md:p-4 bg-black/50 hover:bg-indigo-600/80 rounded-full text-white backdrop-blur-sm transition-all"><ChevronLeft className="w-6 h-6 md:w-8 md:h-8" /></button>
+             <button onClick={handleNext} className="absolute right-2 md:right-4 p-3 md:p-4 bg-black/50 hover:bg-indigo-600/80 rounded-full text-white backdrop-blur-sm transition-all"><ChevronRight className="w-6 h-6 md:w-8 md:h-8" /></button>
+           </div>
+           
+           <div className="absolute bottom-8 text-white/50 text-sm uppercase font-bold tracking-widest pointer-events-none">
+              {index + 1} / {images.length}
+           </div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -7,14 +7,14 @@ export async function POST(req: NextRequest) {
     const { message } = await req.json();
     const apiKey = process.env.API_KEY;
 
-    if (!apiKey) return NextResponse.json({ error: 'API_KEY não configurada.' }, { status: 500 });
+    if (!apiKey) return NextResponse.json({ error: 'API_KEY ausente' }, { status: 500 });
 
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: message,
       config: {
-        systemInstruction: "Você é o Concierge da RestaurAIlma, um app de restauração de fotos em homenagem à Ilma. Ajude os usuários a usarem as ferramentas de restauração, colorização e merge. Seja breve e gentil.",
+        systemInstruction: "Você é o Concierge da RestaurAIlma, um app de restauração de fotos. Seja gentil e ajude o usuário com dicas de restauração.",
       }
     });
 

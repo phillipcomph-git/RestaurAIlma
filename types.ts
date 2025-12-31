@@ -5,6 +5,7 @@ export interface ImageState {
   file: File | null;
   originalPreview: string | null; // Base64 url
   processedPreview: string | null; // Base64 url
+  processedCandidates?: string[]; // Array de variações geradas
   mimeType: string;
   history: string[]; // Pilha para desfazer ações
   future: string[]; // Pilha para refazer ações

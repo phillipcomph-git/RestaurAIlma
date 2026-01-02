@@ -194,15 +194,42 @@ export default function Home() {
 
   const handleApiError = (err: any) => {
     let msg = err.message || "Erro de conexão com a API.";
+    
+    // Tentativa de parsear erros JSON que vêm stringificados (comum no Google GenAI)
+    if (typeof msg === 'string' && (msg.startsWith('{') || msg.includes('{"error"'))) {
+        try {
+            // Extrai o JSON se estiver envelopado em texto de erro
+            const jsonStart = msg.indexOf('{');
+            const jsonEnd = msg.lastIndexOf('}');
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+                const jsonStr = msg.substring(jsonStart, jsonEnd + 1);
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.error && parsed.error.message) {
+                    msg = parsed.error.message;
+                }
+            }
+        } catch (e) {
+            // Falha silenciosa no parse, usa msg original
+        }
+    }
+
+    // Tratamento de mensagens específicas
     if (msg.includes("API_KEY") || msg.includes("API key")) {
       msg = "Chave de API necessária.";
       setApiKeyMissing(true);
+    } else if (msg.includes("403")) {
+      msg = "Acesso negado. Verifique se sua API Key é válida.";
+    } else if (msg.includes("429") || msg.includes("quota") || msg.includes("limit") || msg.includes("RESOURCE_EXHAUSTED")) {
+      msg = "Cota de uso excedida (429). O plano gratuito tem limites. Aguarde um momento.";
+    } else if (msg.includes("500") || msg.includes("internal")) {
+      msg = "Erro interno no servidor de IA. Tente novamente.";
+    } else if (msg.includes("candidate")) {
+      msg = "A IA não conseguiu gerar um resultado seguro ou válido para esta imagem.";
     }
-    if (msg.includes("403")) msg = "Acesso negado (Verifique a API Key).";
     
     setErrorMsg(msg);
     setStatus('error');
-    console.error("Erro no processamento:", err);
+    console.error("Erro processado:", err);
   };
 
   const handleImageSelect = (file: File, base64: string, mimeType: string) => {

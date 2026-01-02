@@ -18,7 +18,9 @@ const getAI = () => {
   const apiKey = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY;
 
   if (!apiKey || apiKey.trim() === '') {
-    console.error("ERRO CRÍTICO: API Key não encontrada.");
+    console.error("DEBUG: API Key está vazia. Verifique se a chave foi selecionada no painel ou configurada no .env.");
+    // Não lança erro imediatamente, tenta instanciar e deixar a lib reclamar se necessário,
+    // mas loga o aviso crítico.
     throw new Error("API_KEY_MISSING");
   }
   
@@ -82,7 +84,7 @@ export const processImage = async (
   } catch (err: any) {
     console.error("Erro detalhado do Gemini:", err);
     const msg = err.message || "Erro desconhecido";
-    if (msg.includes("API_KEY")) throw new Error("Chave de API inválida ou não configurada.");
+    if (msg.includes("API_KEY") || msg.includes("API key")) throw new Error("Chave de API inválida ou não configurada.");
     throw err;
   }
 };

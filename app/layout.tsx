@@ -1,7 +1,15 @@
 
 import React from "react";
 import type { Metadata } from "next";
+import { Jost } from "next/font/google";
 import "./globals.css";
+
+const jost = Jost({ 
+  subsets: ["latin"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+  variable: "--font-jost",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "RestaurAIlma",
@@ -14,11 +22,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className={jost.variable}>
       <head>
-        <link href="https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
+        {/* Fallback de segurança para garantir que o Tailwind carregue em alguns ambientes edge */}
       </head>
-      <body className="antialiased font-['Jost'] font-extralight tracking-tight bg-slate-950 text-slate-100">
+      <body className="antialiased font-sans bg-slate-950 text-slate-100 font-extralight tracking-tight selection:bg-yellow-400/20 selection:text-white">
         {children}
       </body>
     </html>

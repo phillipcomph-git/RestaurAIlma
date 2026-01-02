@@ -11,14 +11,16 @@ const cleanBase64 = (base64Str: string) => {
 };
 
 const getAI = () => {
-  // 1. Tenta env var pública (Vercel Client-Side)
-  // 2. Tenta env var padrão (Node/AI Studio)
-  // 3. Fallback para a chave fornecida (Garante funcionamento imediato)
+  // Prioridade:
+  // 1. Variável pública (Client-side Vercel)
+  // 2. Variável de servidor (Server-side/Node)
+  // 3. Chave Hardcoded (Fallback de segurança para garantir funcionamento imediato)
   const apiKey = process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY || "AIzaSyBzS3qGhMPqn0P7n-E6j8gjUeFvh_0m0aE";
   
-  if (!apiKey) {
-    console.warn("API Key não encontrada e fallback falhou.");
-    return new GoogleGenAI({ apiKey: '' });
+  if (!apiKey || apiKey.trim() === '') {
+    console.error("CRÍTICO: API Key não encontrada em nenhuma variável de ambiente.");
+    // Retorna uma instância vazia para evitar crash imediato, mas vai falhar na chamada
+    return new GoogleGenAI({ apiKey: 'chave_faltando' });
   }
   
   return new GoogleGenAI({ apiKey: apiKey });
@@ -28,7 +30,7 @@ export const chatWithAI = async (message: string, history: any[]): Promise<strin
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview", // Modelo de texto
+      model: "gemini-3-flash-preview",
       contents: [{ parts: [{ text: message }] }],
       config: {
         systemInstruction: "Você é o Concierge da RestaurAIlma, um app de restauração de fotos. Seja breve, gentil e útil.",
@@ -37,7 +39,7 @@ export const chatWithAI = async (message: string, history: any[]): Promise<strin
     return response.text || "Sem resposta.";
   } catch (error: any) {
     console.error("Chat Error:", error);
-    return "Não foi possível conectar ao assistente no momento.";
+    return "O assistente está dormindo um pouco. Tente novamente.";
   }
 };
 
@@ -53,31 +55,37 @@ export const processImage = async (
 
   if (!data) throw new Error("Imagem inválida.");
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image', // Força modelo correto
-    contents: {
-      parts: [
-        { inlineData: { mimeType: safeMimeType, data: data } },
-        { text: `Restaure esta imagem. ${promptInstruction}` }
-      ]
-    },
-    config: {
-      temperature: 0.3,
-    }
-  });
-
-  const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-  const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
-
-  if (imgPart?.inlineData?.data) {
-    return {
-      base64: `data:${imgPart.inlineData.mimeType || 'image/jpeg'};base64,${imgPart.inlineData.data}`,
+  try {
+    const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
-      description: textPart?.text
-    };
-  }
+      contents: {
+        parts: [
+          { inlineData: { mimeType: safeMimeType, data: data } },
+          { text: `Restaure esta imagem. ${promptInstruction}` }
+        ]
+      },
+      config: {
+        temperature: 0.3,
+      }
+    });
 
-  throw new Error("A IA não retornou uma imagem restaurada.");
+    const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
+
+    if (imgPart?.inlineData?.data) {
+      return {
+        base64: `data:${imgPart.inlineData.mimeType || 'image/jpeg'};base64,${imgPart.inlineData.data}`,
+        model: 'gemini-2.5-flash-image',
+        description: textPart?.text
+      };
+    }
+    throw new Error("A IA processou mas não retornou a imagem.");
+  } catch (err: any) {
+    console.error("Erro detalhado do Gemini:", err);
+    const msg = err.message || "Erro desconhecido";
+    if (msg.includes("API_KEY")) throw new Error("Chave de API inválida. Verifique as configurações.");
+    throw err;
+  }
 };
 
 export const generateImageFromPrompt = async (

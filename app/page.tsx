@@ -8,7 +8,8 @@ import {
   Maximize2, Camera, ImageOff, Heart, Info, Send, Layers, 
   Image as ImageIcon, Undo2, Redo2, Download, Minimize2, Edit3, 
   Moon, Sun, UserCheck, SlidersHorizontal, ChevronLeft, ChevronRight, Key, Cpu, AlertCircle, Trash2,
-  ArrowRight, ExternalLink, Square, RectangleHorizontal, RectangleVertical, Loader2, CreditCard, Check
+  ArrowRight, ExternalLink, Square, RectangleHorizontal, RectangleVertical, Loader2, CreditCard, Check,
+  Puzzle
 } from 'lucide-react';
 
 import { Uploader } from '@/components/Uploader';
@@ -20,52 +21,45 @@ import { ImageState, MergeState, AppTab, ProcessingStatus, RestorationMode, Acti
 const RESTORATION_OPTIONS: ActionOption[] = [
   {
     id: 'auto-all',
-    label: 'Mágica Total',
+    label: 'Restauração Completa',
     icon: Zap,
-    description: 'Restaura tudo automaticamente.',
-    prompt: 'Full masterpiece restoration: remove noise, fix cracks, sharpen details, and apply natural colorization.'
+    description: 'Corrige cor, nitidez e danos de uma vez.',
+    prompt: 'Masterpiece restoration: fix all physical damages, remove noise, sharpen details, and apply natural realistic coloring.'
   },
   {
     id: 'restore',
-    label: 'Limpar Danos',
+    label: 'Reparar Danos',
     icon: ScanLine,
-    description: 'Remove riscos e rasgos físicos.',
-    prompt: 'Heavy restoration: fix physical damage like tears, scratches, and stains.'
+    description: 'Remove riscos, rasgos e amassados.',
+    prompt: 'Fix physical damages: remove scratches, tears, creases, and white spots.'
   },
   {
     id: 'remove-flaws',
-    label: 'Remover Falhas',
-    icon: Edit3,
-    description: 'Limpa poeira e manchas leves.',
-    prompt: 'Advanced flaw removal: clean up dust, specks, and minor surface imperfections from the photo.'
+    label: 'Reconstruir Partes',
+    icon: Puzzle,
+    description: 'Preenche áreas faltando ou rasgadas.',
+    prompt: 'Inpainting and reconstruction: Fill in missing parts of the image, reconstruct torn edges, and fix holes seamlessly based on the context.'
   },
   {
     id: 'colorize',
     label: 'Colorir',
     icon: Palette,
-    description: 'Cores naturais para fotos P&B.',
-    prompt: 'Natural colorization: add vivid and realistic colors to this monochrome photo.'
+    description: 'Cores vibrantes para fotos P&B.',
+    prompt: 'Realistic colorization: add natural and vivid colors to this black and white photo, keeping the vintage feel but modern quality.'
   },
   {
     id: 'enhance',
-    label: 'Aprimorar',
+    label: 'Alta Definição',
     icon: Sparkles,
-    description: 'Melhora contraste e nitidez.',
-    prompt: 'Image enhancement: fine-tune contrast and sharpen features.'
-  },
-  {
-    id: 'upscale',
-    label: 'Aumentar Nitidez',
-    icon: Maximize2,
-    description: 'Melhora a definição dos detalhes.',
-    prompt: 'Sharpen details and increase clarity significantly.'
+    description: 'Super resolução e texturas.',
+    prompt: 'High definition enhancement: Upscale resolution, sharpen textures, improve contrast, and denoise.'
   },
   {
     id: 'remove-bg',
     label: 'Remover Fundo',
     icon: ImageOff,
-    description: 'Isola o objeto principal.',
-    prompt: 'Background removal: Remove the background completely, isolating the main subject.'
+    description: 'Deixa o fundo transparente.',
+    prompt: 'Remove background: Isolate the main subject completely and make the background white/transparent.'
   }
 ];
 
@@ -127,7 +121,6 @@ export default function Home() {
   const [generateCount, setGenerateCount] = useState(1);
   const [aspectRatio, setAspectRatio] = useState('1:1');
 
-  // Correção de Hidratação: Iniciar com padrão e carregar do storage no useEffect
   const [settings, setSettings] = useState<AppSettings>({ language: 'pt', theme: 'dark', preferredModel: 'gemini-2.5-flash-image' });
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [isClient, setIsClient] = useState(false);
@@ -153,21 +146,6 @@ export default function Home() {
     if (isClient) safeStorage.save('restaurai_settings', settings); 
   }, [settings, isClient]);
 
-  // Checagem de API Key para AI Studio (mantida por segurança)
-  useEffect(() => {
-    const checkKey = async () => {
-      if (typeof window !== 'undefined' && (window as any).aistudio) {
-        try {
-          const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-          // Não forçamos o modal aqui para evitar loop se a chave já estiver na env
-        } catch (e) {
-          console.error("Erro ao verificar chave do AI Studio:", e);
-        }
-      }
-    };
-    checkKey();
-  }, []);
-
   const isLight = settings.theme === 'light';
   const cardBg = isLight ? 'bg-white shadow-[0_8px_30px_rgb(0,0,0,0.06)] border-slate-200' : 'bg-slate-900/80 shadow-2xl border-slate-800';
   const textMain = isLight ? 'text-slate-900 font-extralight' : 'text-white font-extralight';
@@ -176,8 +154,8 @@ export default function Home() {
 
   const handleApiError = (err: any) => {
     let msg = err.message || "Erro de conexão com a API.";
-    if (msg.includes("API_KEY")) msg = "Chave de API inválida ou não encontrada. Verifique as configurações na Vercel.";
-    if (msg.includes("403")) msg = "Acesso negado (API Key inválida).";
+    if (msg.includes("API_KEY")) msg = "Chave de API inválida ou não encontrada.";
+    if (msg.includes("403")) msg = "Acesso negado (Verifique a API Key).";
     
     setErrorMsg(msg);
     setStatus('error');
@@ -196,7 +174,7 @@ export default function Home() {
     setErrorMsg(null);
     try {
       const toolPrompt = RESTORATION_OPTIONS.find(o => o.id === mode)?.prompt || '';
-      const userContext = customPrompt.trim() ? `ADICIONAL: ${customPrompt}. ` : '';
+      const userContext = customPrompt.trim() ? `INSTRUÇÃO EXTRA: ${customPrompt}. ` : '';
       const finalPrompt = `${userContext}${toolPrompt}`;
       
       const count = mode === 'custom' ? restoreCount : 1;
@@ -315,7 +293,6 @@ export default function Home() {
     }
   };
 
-  // Se não estiver montado no cliente, renderiza null ou skeleton para evitar erro de hidratação
   if (!isClient) return <div className="min-h-screen bg-slate-950"></div>;
 
   return (
@@ -361,15 +338,15 @@ export default function Home() {
         {activeTab === 'restore' && (
           !imageState.originalPreview ? (
             <div className="grid md:grid-cols-2 gap-12 items-center min-h-[60vh] py-10">
-              <div className="space-y-6">
+              <div className="space-y-6 animate-in slide-in-from-left-6 duration-700">
                 <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Dê vida nova às suas <span className="text-yellow-500 font-bold">fotos</span>.</h1>
-                <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Restauração inteligente preservando memórias preciosas com perfeição.</p>
+                <p className={`${textSub} text-sm max-w-sm tracking-soft`}>Restaure partes faltando, colorize memórias e aprimore a qualidade com IA.</p>
                 <Uploader onImageSelect={handleImageSelect} />
               </div>
               <ChatAssistant cardBg={cardBg} isLight={isLight} apiChat={apiChat} />
             </div>
           ) : (
-            <div className="grid lg:grid-cols-3 gap-8 items-start">
+            <div className="grid lg:grid-cols-3 gap-8 items-start animate-in fade-in duration-500">
               <div className="lg:col-span-2 space-y-6">
                 <div className={`${cardBg} rounded-3xl border p-2 min-h-[400px] flex items-center justify-center relative overflow-hidden transition-all shadow-2xl`}>
                   {status === 'processing' && <LoaderOverlay />}
@@ -384,7 +361,6 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Miniaturas das variações se houver mais de uma */}
                 {imageState.processedCandidates && imageState.processedCandidates.length > 1 && (
                   <div className={`flex justify-center gap-3 p-3 rounded-2xl border ${isLight ? 'bg-white border-slate-300' : 'bg-slate-900 border-slate-700'}`}>
                     {imageState.processedCandidates.map((src, idx) => (
@@ -402,7 +378,7 @@ export default function Home() {
 
                 {imageState.processedPreview && (
                    <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
-                      <Button onClick={handleApplyResult} variant="primary" className="h-14 px-10 uppercase text-xs font-bold w-full sm:w-auto bg-green-600 hover:bg-green-500" icon={Check}>Aplicar</Button>
+                      <Button onClick={handleApplyResult} variant="primary" className="h-14 px-10 uppercase text-xs font-bold w-full sm:w-auto bg-green-600 hover:bg-green-500" icon={Check}>Aplicar Edição</Button>
                       <Button onClick={() => handleDownloadImage(imageState.processedPreview)} variant="secondary" className="h-14 px-10 uppercase text-xs font-bold w-full sm:w-auto" icon={Download}>Baixar</Button>
                    </div>
                 )}
@@ -410,17 +386,17 @@ export default function Home() {
               <div className="space-y-6">
                 <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
                    <div className="flex items-center justify-between mb-4">
-                      <div className="text-[10px] uppercase font-bold tracking-elegant text-indigo-600 flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5" /> Ajuste Manual</div>
+                      <div className="text-[10px] uppercase font-bold tracking-elegant text-indigo-600 flex items-center gap-2"><MessageSquare className="w-3.5 h-3.5" /> Detalhes</div>
                       <div className={`flex p-1 rounded-xl border space-x-1 ${isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-800/50 border-slate-700'}`}>
-                        <button onClick={handleUndo} disabled={imageState.history.length === 0} className="p-2 rounded-lg disabled:opacity-20"><Undo2 className="w-4 h-4" /></button>
-                        <button onClick={handleRedo} disabled={imageState.future.length === 0} className="p-2 rounded-lg disabled:opacity-20"><Redo2 className="w-4 h-4" /></button>
+                        <button onClick={handleUndo} disabled={imageState.history.length === 0} className="p-2 rounded-lg disabled:opacity-20 hover:bg-black/10"><Undo2 className="w-4 h-4" /></button>
+                        <button onClick={handleRedo} disabled={imageState.future.length === 0} className="p-2 rounded-lg disabled:opacity-20 hover:bg-black/10"><Redo2 className="w-4 h-4" /></button>
                       </div>
                    </div>
                    <div className="relative group space-y-4">
-                     <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600`} placeholder="Instrução personalizada..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
+                     <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-2xl p-4 pr-12 text-xs h-24 outline-none border transition-all focus:border-indigo-600 resize-none`} placeholder="Descreva o que quer mudar..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
                      
                      <div className="flex items-center justify-between">
-                        <div className={`text-[9px] uppercase font-bold tracking-elegant ${textSub}`}>Variações</div>
+                        <div className={`text-[9px] uppercase font-bold tracking-elegant ${textSub}`}>Opções</div>
                         <div className={`flex p-0.5 rounded-lg border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
                             {[1, 2, 4].map(n => (
                               <button key={n} onClick={() => setRestoreCount(n)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${restoreCount === n ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}>{n}x</button>
@@ -428,25 +404,25 @@ export default function Home() {
                         </div>
                      </div>
 
-                     <Button onClick={() => handleProcess('custom')} disabled={!customPrompt.trim() || status === 'processing'} className="w-full" variant="primary" icon={Sparkles}>Gerar</Button>
+                     <Button onClick={() => handleProcess('custom')} disabled={!customPrompt.trim() || status === 'processing'} className="w-full" variant="primary" icon={Sparkles}>Processar</Button>
                    </div>
                 </div>
                 <div className={`${cardBg} rounded-3xl border p-5 shadow-xl`}>
-                  <h2 className={`text-[10px] flex items-center gap-2 mb-6 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-3.5 h-3.5 text-indigo-600" /> Métodos</h2>
-                  <div className="grid grid-cols-1 gap-2.5">
+                  <h2 className={`text-[10px] flex items-center gap-2 mb-4 uppercase tracking-elegant font-bold ${textMain}`}><Wand2 className="w-3.5 h-3.5 text-indigo-600" /> Ações Rápidas</h2>
+                  <div className="grid grid-cols-1 gap-2">
                     {RESTORATION_OPTIONS.map(opt => (
                       <ActionCard key={opt.id} option={opt} active={activeMode === opt.id && status === 'success'} onClick={() => handleProcess(opt.id)} isLight={isLight} />
                     ))}
                   </div>
                 </div>
-                <Button onClick={handleFullReset} variant="ghost" className="w-full h-10 uppercase text-[9px] border" icon={RotateCcw}>Limpar Estúdio</Button>
+                <Button onClick={handleFullReset} variant="ghost" className="w-full h-10 uppercase text-[9px] border" icon={RotateCcw}>Novo Projeto</Button>
               </div>
             </div>
           )
         )}
 
         {activeTab === 'merge' && (
-          <div className="grid md:grid-cols-2 gap-12 py-10">
+          <div className="grid md:grid-cols-2 gap-12 py-10 animate-in fade-in duration-500">
             <div className="space-y-8">
                <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Mescle <span className="text-yellow-500 font-bold">pessoas</span>.</h1>
                <div className="grid grid-cols-2 gap-4">
@@ -454,7 +430,7 @@ export default function Home() {
                   <UploaderCompact label="Foto B" current={mergeState.imageB} onSelect={(f:any, b:any, m:any) => setMergeState(p => ({...p, imageB: b, mimeTypeB: m}))} isLight={isLight} />
                </div>
                <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-4`}>
-                  <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-32 outline-none border transition-all focus:border-indigo-600`} placeholder="Instrução de mesclagem..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
+                  <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-32 outline-none border transition-all focus:border-indigo-600`} placeholder="Ex: Coloque o rosto da Foto A no corpo da Foto B..." value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} />
                   <div className="flex flex-col gap-2">
                     <p className={`text-[10px] uppercase font-bold tracking-elegant ${textSub}`}>Variações</p>
                     <div className={`flex p-1 rounded-xl border ${isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
@@ -475,15 +451,15 @@ export default function Home() {
         )}
 
         {activeTab === 'generate' && (
-          <div className="grid md:grid-cols-2 gap-12 py-10">
+          <div className="grid md:grid-cols-2 gap-12 py-10 animate-in fade-in duration-500">
             <div className="space-y-8">
                <h1 className={`text-4xl lg:text-6xl uppercase ${textMain} leading-tight`}>Crie <span className="text-yellow-500 font-bold">arte</span>.</h1>
                <div className="flex items-center gap-4">
                   <div className="w-32 h-32"><UploaderCompact label="Referência" current={generateState.baseImage} onSelect={(f:any, b:any, m:any) => setGenerateState(p => ({...p, baseImage: b, baseMimeType: m}))} isLight={isLight} /></div>
-                  <div className="flex-1"><p className={`text-[10px] uppercase font-bold mb-1 ${textSub}`}>Base (Opcional)</p><p className={`text-[9px] ${textSub} opacity-80`}>Use uma imagem como guia visual.</p></div>
+                  <div className="flex-1"><p className={`text-[10px] uppercase font-bold mb-1 ${textSub}`}>Base (Opcional)</p><p className={`text-[9px] ${textSub} opacity-80`}>Use uma imagem como guia visual para a geração.</p></div>
                </div>
                <div className={`${cardBg} p-6 rounded-3xl border shadow-xl space-y-6`}>
-                  <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-40 outline-none border focus:border-indigo-600`} placeholder="Descreva sua visão..." value={generateState.prompt} onChange={e => setGenerateState(p => ({...p, prompt: e.target.value}))} />
+                  <textarea className={`w-full ${isLight ? 'bg-slate-50 text-slate-900 border-slate-300' : 'bg-slate-950 text-white border-slate-800'} rounded-xl p-4 text-sm h-40 outline-none border focus:border-indigo-600`} placeholder="Descreva sua visão artística..." value={generateState.prompt} onChange={e => setGenerateState(p => ({...p, prompt: e.target.value}))} />
                   
                   <div className="grid grid-cols-2 gap-4">
                      <div className="flex flex-col gap-2">
@@ -524,7 +500,7 @@ export default function Home() {
          ))}
       </nav>
 
-      {/* Histórico e Outros Modais */}
+      {/* Modais */}
       <Modal isOpen={showAbout} onClose={() => setShowAbout(false)} title="Sobre RestaurAIlma" isLight={isLight}>
         <div className="space-y-8 text-center">
           <div className="relative w-full aspect-square rounded-[2rem] overflow-hidden border border-indigo-600/20 shadow-2xl">
@@ -594,13 +570,14 @@ export default function Home() {
     </div>
   );
 }
-// ... components ResultsGallery, LoaderOverlay, ChatAssistant, Modal, UploaderCompact, AboutCarousel, ActionCard remain unchanged
+
+// Helpers Components
 function LoaderOverlay() {
   return (
     <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center p-6">
       <div className="w-16 h-16 border-4 border-indigo-600/20 border-t-indigo-600 rounded-full animate-spin mb-4 shadow-[0_0_20px_rgba(79,70,229,0.3)]"></div>
       <p className="text-lg font-bold uppercase text-white tracking-widest">Processando...</p>
-      <p className="text-[10px] text-slate-400 mt-2 uppercase tracking-elegant">A inteligência artificial está desenhando as melhorias</p>
+      <p className="text-[10px] text-slate-400 mt-2 uppercase tracking-elegant">Restaurando detalhes e corrigindo falhas</p>
     </div>
   );
 }

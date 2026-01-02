@@ -11,27 +11,34 @@ const cleanBase64 = (base64Str: string) => {
 };
 
 const getAI = () => {
-  const apiKey = process.env.API_KEY;
+  // Na Vercel (Client-Side), precisamos do prefixo NEXT_PUBLIC_
+  // Se estiver no AI Studio, ele injeta process.env.API_KEY automaticamente
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY;
+  
   if (!apiKey) {
-    throw new Error("API_KEY não encontrada. Verifique se você configurou a chave no ambiente.");
+    console.warn("API Key não encontrada. Configure NEXT_PUBLIC_API_KEY na Vercel.");
+    // Fallback temporário para evitar crash se a env não estiver setada, 
+    // mas o ideal é configurar nas variáveis de ambiente.
+    return new GoogleGenAI({ apiKey: '' });
   }
-  return new GoogleGenAI({ apiKey });
+  // Instancia com a chave
+  return new GoogleGenAI({ apiKey: apiKey });
 };
 
 export const chatWithAI = async (message: string, history: any[]): Promise<string> => {
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3-flash-preview", // Modelo de texto
       contents: [{ parts: [{ text: message }] }],
       config: {
-        systemInstruction: "Você é o Concierge da RestaurAIlma, um app de restauração de fotos em homenagem à Ilma. Seja breve e gentil.",
+        systemInstruction: "Você é o Concierge da RestaurAIlma, um app de restauração de fotos. Seja breve, gentil e útil.",
       }
     });
     return response.text || "Sem resposta.";
-  } catch (error) {
+  } catch (error: any) {
     console.error("Chat Error:", error);
-    return "Erro ao conversar com o assistente.";
+    return "Não foi possível conectar ao assistente no momento.";
   }
 };
 
@@ -42,47 +49,36 @@ export const processImage = async (
   modelPreference: string = 'gemini-2.5-flash-image'
 ): Promise<ProcessResult> => {
   const ai = getAI();
-  
-  // Garantimos que o mimeType seja compatível
   const safeMimeType = mimeType.startsWith('image/') ? mimeType : 'image/jpeg';
   const data = cleanBase64(base64Image);
 
-  if (!data) throw new Error("Dados da imagem inválidos ou vazios.");
+  if (!data) throw new Error("Imagem inválida.");
 
   const response = await ai.models.generateContent({
-    model: modelPreference,
+    model: 'gemini-2.5-flash-image', // Força modelo correto
     contents: {
       parts: [
         { inlineData: { mimeType: safeMimeType, data: data } },
-        { text: `TASK: ${promptInstruction}. OUTPUT: You MUST return the modified image as your primary response part. Focus on realistic photo restoration, preserving facial features and removing defects.` }
+        { text: `Restaure esta imagem. ${promptInstruction}` }
       ]
     },
     config: {
-      systemInstruction: "You are an expert photo restoration AI. Your task is to process the provided image and return the restored version. If there are scratches, remove them. If it is black and white and requested to colorize, apply natural colors. If it is blurry, sharpen it. ALWAYS prioritize returning the image part.",
-      temperature: 0.1, // Temperatura baixa para mais fidelidade
+      temperature: 0.3,
     }
   });
 
-  if (!response.candidates || response.candidates.length === 0) {
-    throw new Error("A IA não gerou candidatos. Verifique se a imagem viola alguma política de segurança.");
-  }
-
-  const parts = response.candidates[0].content.parts;
-  const imgPart = parts.find(p => p.inlineData);
-  const textPart = parts.find(p => p.text);
+  const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+  const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
 
   if (imgPart?.inlineData?.data) {
     return {
-      base64: `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`,
-      model: modelPreference,
+      base64: `data:${imgPart.inlineData.mimeType || 'image/jpeg'};base64,${imgPart.inlineData.data}`,
+      model: 'gemini-2.5-flash-image',
       description: textPart?.text
     };
-  } else if (textPart?.text) {
-    // Se a IA respondeu apenas com texto, é provável que seja uma recusa ou explicação
-    throw new Error(`A IA não editou a imagem. Resposta: "${textPart.text}"`);
   }
 
-  throw new Error("Ocorreu um erro desconhecido: a IA não retornou imagem nem texto explicativo.");
+  throw new Error("A IA não retornou uma imagem restaurada.");
 };
 
 export const generateImageFromPrompt = async (
@@ -94,7 +90,8 @@ export const generateImageFromPrompt = async (
   const ai = getAI();
   const results: ProcessResult[] = [];
   
-  for (let i = 0; i < (count || 1); i++) {
+  // Executa em série ou paralelo dependendo da necessidade. Aqui fazemos loop simples.
+  for (let i = 0; i < count; i++) {
     const parts: any[] = [{ text: prompt }];
     if (baseImage) {
       parts.push({ 
@@ -105,21 +102,25 @@ export const generateImageFromPrompt = async (
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts },
-      config: { 
-        imageConfig: { aspectRatio: aspectRatio as any },
-        temperature: 0.8
-      }
-    });
+    try {
+        const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts },
+        config: { 
+            imageConfig: { aspectRatio: aspectRatio as any },
+            temperature: 0.8
+        }
+        });
 
-    const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (imgPart?.inlineData?.data) {
-      results.push({
-        base64: `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`,
-        model: 'gemini-2.5-flash-image'
-      });
+        const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+        if (imgPart?.inlineData?.data) {
+        results.push({
+            base64: `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`,
+            model: 'gemini-2.5-flash-image'
+        });
+        }
+    } catch (e) {
+        console.error("Erro na geração:", e);
     }
   }
   return results;
@@ -136,27 +137,29 @@ export const mergeImages = async (
   const ai = getAI();
   const results: ProcessResult[] = [];
 
-  for (let i = 0; i < (count || 1); i++) {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          { inlineData: { mimeType: mimeA, data: cleanBase64(imageA) } },
-          { inlineData: { mimeType: mimeB, data: cleanBase64(imageB) } },
-          { text: `Fusion Instruction: ${instruction}. Create a single natural, high-quality composite image.` }
-        ]
-      },
-      config: {
-        temperature: 0.4,
-      }
-    });
+  for (let i = 0; i < count; i++) {
+    try {
+        const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+            parts: [
+            { inlineData: { mimeType: mimeA, data: cleanBase64(imageA) } },
+            { inlineData: { mimeType: mimeB, data: cleanBase64(imageB) } },
+            { text: `FUSÃO: ${instruction}. Crie uma imagem composta.` }
+            ]
+        },
+        config: { temperature: 0.4 }
+        });
 
-    const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (imgPart?.inlineData?.data) {
-      results.push({
-        base64: `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`,
-        model: 'gemini-2.5-flash-image'
-      });
+        const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+        if (imgPart?.inlineData?.data) {
+        results.push({
+            base64: `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`,
+            model: 'gemini-2.5-flash-image'
+        });
+        }
+    } catch (e) {
+        console.error("Erro no merge:", e);
     }
   }
   return results;

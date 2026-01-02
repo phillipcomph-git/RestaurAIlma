@@ -141,7 +141,11 @@ export default function App() {
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
   const handleApiError = (err: any) => {
-    setErrorMsg(err.message || "Erro de conexão com a API.");
+    let msg = err.message || "Erro de conexão com a API.";
+    if (msg.includes("API_KEY")) msg = "Chave de API inválida ou não encontrada. Recarregue a página.";
+    if (msg.includes("403")) msg = "Acesso negado (API Key inválida).";
+    
+    setErrorMsg(msg);
     setStatus('error');
     console.error("Erro no processamento:", err);
   };
@@ -161,11 +165,12 @@ export default function App() {
       const userContext = customPrompt.trim() ? `ADICIONAL: ${customPrompt}. ` : '';
       const finalPrompt = `${userContext}${toolPrompt}`;
       
-      // Se for modo custom, usa o restoreCount selecionado, caso contrário 1
       const count = mode === 'custom' ? restoreCount : 1;
 
       const results = await apiProcess(imageState.originalPreview, imageState.mimeType, finalPrompt, settings.preferredModel, count);
       
+      if (!results || results.length === 0) throw new Error("Nenhum resultado gerado.");
+
       const firstResult = results[0].base64;
       const candidates = results.map(r => r.base64);
 
@@ -552,7 +557,7 @@ export default function App() {
     </div>
   );
 }
-
+// ... components ResultsGallery, LoaderOverlay, ChatAssistant, Modal, UploaderCompact, AboutCarousel, ActionCard remain unchanged
 function LoaderOverlay() {
   return (
     <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-center p-6">
@@ -691,7 +696,7 @@ function AboutCarousel({ images }: { images: string[] }) {
   const [isFullScreen, setIsFullScreen] = useState(false);
   
   useEffect(() => {
-    if (isFullScreen) return; // Pausa o auto-play no fullscreen
+    if (isFullScreen) return; 
     const timer = setInterval(() => { setIndex(p => (p + 1) % images.length); }, 4000);
     return () => clearInterval(timer);
   }, [images.length, isFullScreen]);
@@ -705,30 +710,21 @@ function AboutCarousel({ images }: { images: string[] }) {
         {images.map((img, i) => (
           <img key={i} src={img} className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${index === i ? 'opacity-100' : 'opacity-0'}`} />
         ))}
-        {/* Controles de Navegação */}
         <div className="absolute inset-0 flex items-center justify-between p-2 opacity-0 group-hover:opacity-100 transition-opacity">
            <button onClick={handlePrev} className="p-1 bg-black/50 rounded-full text-white hover:bg-indigo-600"><ChevronLeft className="w-5 h-5" /></button>
            <button onClick={handleNext} className="p-1 bg-black/50 rounded-full text-white hover:bg-indigo-600"><ChevronRight className="w-5 h-5" /></button>
         </div>
-        {/* Botão Fullscreen */}
         <button onClick={() => setIsFullScreen(true)} className="absolute bottom-3 right-3 p-2 bg-black/50 rounded-full text-white hover:bg-indigo-600 opacity-0 group-hover:opacity-100 transition-all">
            <Maximize2 className="w-4 h-4" />
         </button>
       </div>
-
       {isFullScreen && (
         <div className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center p-2 md:p-4">
            <button onClick={() => setIsFullScreen(false)} className="absolute top-4 right-4 z-50 p-3 bg-black/50 hover:bg-white/20 rounded-full text-white/80 hover:text-white backdrop-blur-sm transition-all"><X className="w-6 h-6" /></button>
-           
            <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
              <img src={images[index]} className="max-w-full max-h-full object-contain" />
-             
              <button onClick={handlePrev} className="absolute left-2 md:left-4 p-3 md:p-4 bg-black/50 hover:bg-indigo-600/80 rounded-full text-white backdrop-blur-sm transition-all"><ChevronLeft className="w-6 h-6 md:w-8 md:h-8" /></button>
              <button onClick={handleNext} className="absolute right-2 md:right-4 p-3 md:p-4 bg-black/50 hover:bg-indigo-600/80 rounded-full text-white backdrop-blur-sm transition-all"><ChevronRight className="w-6 h-6 md:w-8 md:h-8" /></button>
-           </div>
-           
-           <div className="absolute bottom-8 text-white/50 text-sm uppercase font-bold tracking-widest pointer-events-none">
-              {index + 1} / {images.length}
            </div>
         </div>
       )}

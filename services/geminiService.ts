@@ -12,13 +12,18 @@ const cleanBase64 = (base64Str: string) => {
 
 const getAI = () => {
   // Prioridade:
-  // 1. process.env.API_KEY (Injetado pelo Vite ou Servidor Vercel)
-  // 2. process.env.NEXT_PUBLIC_API_KEY (Fallback)
+  // 1. process.env.API_KEY (Injetado pelo Vite/Next build)
+  // 2. process.env.NEXT_PUBLIC_API_KEY (Fallback build)
+  // 3. localStorage (Inserção manual do usuário)
   
-  const apiKey = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY;
+  let apiKey = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY;
+
+  if ((!apiKey || apiKey.trim() === '') && typeof window !== 'undefined') {
+    apiKey = localStorage.getItem('gemini_api_key') || undefined;
+  }
 
   if (!apiKey || apiKey.trim() === '') {
-    console.error("DEBUG: API Key está vazia. Verifique se a chave foi selecionada no painel.");
+    console.error("DEBUG: API Key está vazia.");
     throw new Error("API_KEY_MISSING");
   }
   
@@ -46,45 +51,54 @@ export const processImage = async (
   base64Image: string,
   mimeType: string,
   promptInstruction: string,
-  modelPreference: string = 'gemini-2.5-flash-image'
-): Promise<ProcessResult> => {
+  modelPreference: string = 'gemini-2.5-flash-image',
+  count: number = 1
+): Promise<ProcessResult[]> => {
   const ai = getAI();
   const safeMimeType = mimeType.startsWith('image/') ? mimeType : 'image/jpeg';
   const data = cleanBase64(base64Image);
 
   if (!data) throw new Error("Imagem inválida.");
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: {
-        parts: [
-          { inlineData: { mimeType: safeMimeType, data: data } },
-          { text: `Restaure esta imagem. ${promptInstruction}` }
-        ]
-      },
-      config: {
-        temperature: 0.3,
+  const results: ProcessResult[] = [];
+
+  // Loop para gerar múltiplas variações se count > 1
+  for (let i = 0; i < count; i++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: modelPreference,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: safeMimeType, data: data } },
+            { text: `Restaure esta imagem. ${promptInstruction}` }
+          ]
+        },
+        config: {
+          temperature: 0.3 + (i * 0.1), // Pequena variação na temperatura para gerar resultados diferentes
+        }
+      });
+
+      const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+      const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
+
+      if (imgPart?.inlineData?.data) {
+        results.push({
+          base64: `data:${imgPart.inlineData.mimeType || 'image/jpeg'};base64,${imgPart.inlineData.data}`,
+          model: modelPreference,
+          description: textPart?.text
+        });
       }
-    });
-
-    const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
-
-    if (imgPart?.inlineData?.data) {
-      return {
-        base64: `data:${imgPart.inlineData.mimeType || 'image/jpeg'};base64,${imgPart.inlineData.data}`,
-        model: 'gemini-2.5-flash-image',
-        description: textPart?.text
-      };
+    } catch (err: any) {
+      console.error("Erro detalhado do Gemini:", err);
+      const msg = err.message || "Erro desconhecido";
+      if (msg.includes("API_KEY") || msg.includes("API key")) throw new Error("Chave de API inválida ou não configurada.");
+      // Se for apenas uma das tentativas falhando, continuamos
+      if (count === 1) throw err;
     }
-    throw new Error("A IA processou mas não retornou a imagem.");
-  } catch (err: any) {
-    console.error("Erro detalhado do Gemini:", err);
-    const msg = err.message || "Erro desconhecido";
-    if (msg.includes("API_KEY") || msg.includes("API key")) throw new Error("Chave de API inválida ou não configurada.");
-    throw err;
   }
+  
+  if (results.length === 0) throw new Error("A IA processou mas não retornou a imagem.");
+  return results;
 };
 
 export const generateImageFromPrompt = async (

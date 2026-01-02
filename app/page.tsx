@@ -8,7 +8,7 @@ import {
   Image as ImageIcon, Undo2, Redo2, Download, Minimize2, Edit3, 
   Moon, Sun, UserCheck, SlidersHorizontal, ChevronLeft, ChevronRight, Key, Cpu, AlertCircle, Trash2,
   ArrowRight, ExternalLink, Square, RectangleHorizontal, RectangleVertical, Loader2, CreditCard, Check,
-  Puzzle
+  Puzzle, Save
 } from 'lucide-react';
 
 import { Uploader } from '@/components/Uploader';
@@ -16,9 +16,6 @@ import { ImageComparator } from '@/components/ImageComparator';
 import { Button } from '@/components/Button';
 import { useImageProcessing } from '@/hooks/useImageProcessing';
 import { ImageState, MergeState, AppTab, ProcessingStatus, RestorationMode, ActionOption, HistoryItem, AppSettings, GenerateState } from '@/types';
-
-// Declaração removida para evitar conflito com tipos globais existentes
-// O acesso será feito via cast (window as any).aistudio
 
 const RESTORATION_OPTIONS: ActionOption[] = [
   {
@@ -83,10 +80,7 @@ const safeStorage = {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (e) {
-      if (key === 'restaurai_history') {
-        const partial = Array.isArray(value) ? value.slice(0, 3) : [];
-        try { localStorage.setItem(key, JSON.stringify(partial)); } catch (err) { localStorage.removeItem(key); }
-      }
+      // Ignora erros de cota
     }
   },
   load: (key: string, defaultValue: any) => {
@@ -117,6 +111,7 @@ export default function Home() {
   const [customPrompt, setCustomPrompt] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  const [manualApiKey, setManualApiKey] = useState('');
   
   const [generateState, setGenerateState] = useState<GenerateState>({
     prompt: '', baseImage: null, baseMimeType: null, results: null, resultIndex: 0
@@ -138,11 +133,20 @@ export default function Home() {
     setSettings(safeStorage.load('restaurai_settings', { language: 'pt', theme: 'dark', preferredModel: 'gemini-2.5-flash-image' }));
     setHistory(safeStorage.load('restaurai_history', []));
 
-    // Verifica se existe integração com AI Studio e se a chave já foi selecionada
-    if (typeof window !== 'undefined' && (window as any).aistudio) {
-      (window as any).aistudio.hasSelectedApiKey().then((has: boolean) => {
-        if (!has) setApiKeyMissing(true);
-      });
+    // Verifica se já existe uma chave manual salva
+    if (typeof window !== 'undefined' && localStorage.getItem('gemini_api_key')) {
+      setApiKeyMissing(false);
+    } else {
+      // Verifica se existe integração com AI Studio e se a chave já foi selecionada
+      if (typeof window !== 'undefined' && (window as any).aistudio) {
+        (window as any).aistudio.hasSelectedApiKey().then((has: boolean) => {
+          if (!has) setApiKeyMissing(true);
+        });
+      } else {
+        // Se não for ambiente AI Studio e não tiver chave manual, pode estar faltando
+        // Mas só marcamos como missing se o processo falhar ou se quisermos forçar o input
+        // Por padrão, deixamos o erro aparecer se a chamada falhar
+      }
     }
   }, []);
 
@@ -169,11 +173,22 @@ export default function Home() {
       if (has) {
         setApiKeyMissing(false);
         setErrorMsg(null);
-        // Recarrega para garantir que a chave seja injetada
         window.location.reload(); 
       }
     } else {
-      alert("A seleção automática não está disponível neste ambiente. Por favor, configure a variável API_KEY.");
+      // Se não houver integração, não faz nada aqui, a UI já mostra o input manual
+      alert("Integração automática indisponível. Por favor, use o campo de entrada manual.");
+    }
+  };
+
+  const handleSaveManualKey = () => {
+    if (manualApiKey.trim().length > 10) {
+      localStorage.setItem('gemini_api_key', manualApiKey.trim());
+      setApiKeyMissing(false);
+      setErrorMsg(null);
+      window.location.reload();
+    } else {
+      alert("Chave inválida.");
     }
   };
 
@@ -323,6 +338,8 @@ export default function Home() {
 
   if (!isClient) return <div className="min-h-screen bg-slate-950"></div>;
 
+  const hasAIStudio = typeof window !== 'undefined' && !!(window as any).aistudio;
+
   return (
     <div className={`min-h-screen ${isLight ? 'bg-slate-300 text-slate-950' : 'bg-slate-950 text-white'} transition-colors duration-300 pb-24 md:pb-20`}>
       <header className={`border-b ${isLight ? 'border-slate-400 bg-white/95 shadow-sm' : 'border-slate-800 bg-slate-900/50'} backdrop-blur-md sticky top-0 z-50 h-16 md:h-20`}>
@@ -356,15 +373,31 @@ export default function Home() {
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {apiKeyMissing && (
-          <div className="mb-6 p-6 rounded-3xl border bg-indigo-900/20 border-indigo-500/50 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-500">
+          <div className="mb-6 p-6 rounded-3xl border bg-indigo-900/20 border-indigo-500/50 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-500">
              <div className="flex items-center gap-4">
                <div className="p-3 bg-indigo-600 rounded-full animate-pulse"><Key className="w-6 h-6 text-white" /></div>
                <div>
                  <h3 className="font-bold text-indigo-400 uppercase tracking-wider text-sm">Acesso Necessário</h3>
-                 <p className="text-xs text-slate-300 mt-1">Para usar a IA, conecte sua conta Google Cloud ou selecione uma API Key.</p>
+                 <p className="text-xs text-slate-300 mt-1">
+                   {hasAIStudio ? "Conecte sua conta Google Cloud." : "Insira sua Gemini API Key para continuar."}
+                 </p>
                </div>
              </div>
-             <Button onClick={handleSelectApiKey} variant="primary" className="whitespace-nowrap w-full sm:w-auto uppercase font-bold text-xs" icon={CreditCard}>Conectar API Key</Button>
+             
+             {hasAIStudio ? (
+               <Button onClick={handleSelectApiKey} variant="primary" className="whitespace-nowrap w-full md:w-auto uppercase font-bold text-xs" icon={CreditCard}>Conectar API Key</Button>
+             ) : (
+               <div className="flex gap-2 w-full md:w-auto">
+                 <input 
+                   type="password" 
+                   value={manualApiKey}
+                   onChange={(e) => setManualApiKey(e.target.value)}
+                   placeholder="Cole sua API Key aqui (AIza...)" 
+                   className="flex-1 min-w-[200px] bg-slate-950/50 border border-indigo-500/30 rounded-lg px-4 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                 />
+                 <Button onClick={handleSaveManualKey} variant="primary" className="whitespace-nowrap uppercase font-bold text-xs" icon={Save}>Salvar</Button>
+               </div>
+             )}
           </div>
         )}
 

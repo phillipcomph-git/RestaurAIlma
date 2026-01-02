@@ -11,16 +11,20 @@ const cleanBase64 = (base64Str: string) => {
 };
 
 const getAI = () => {
-  // Prioridade:
-  // 1. Variável pública (Client-side Vercel)
-  // 2. Variável de servidor (Server-side/Node)
-  // 3. Chave Hardcoded (Fallback de segurança para garantir funcionamento imediato)
-  const apiKey = process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY || "AIzaSyBzS3qGhMPqn0P7n-E6j8gjUeFvh_0m0aE";
+  // ATENÇÃO: Nunca deixe chaves reais hardcoded aqui se for subir para o GitHub.
+  // O Google detecta e bloqueia a chave automaticamente.
   
+  // 1. Tenta pegar a chave segura do servidor (Vercel Production)
+  let apiKey = process.env.API_KEY;
+
+  // 2. Se não houver chave de servidor, tenta a pública (apenas para Preview/Local)
+  if (!apiKey) {
+    apiKey = process.env.NEXT_PUBLIC_API_KEY;
+  }
+
   if (!apiKey || apiKey.trim() === '') {
-    console.error("CRÍTICO: API Key não encontrada em nenhuma variável de ambiente.");
-    // Retorna uma instância vazia para evitar crash imediato, mas vai falhar na chamada
-    return new GoogleGenAI({ apiKey: 'chave_faltando' });
+    console.error("ERRO CRÍTICO: API Key não configurada. Verifique as variáveis de ambiente na Vercel.");
+    throw new Error("API_KEY_MISSING");
   }
   
   return new GoogleGenAI({ apiKey: apiKey });

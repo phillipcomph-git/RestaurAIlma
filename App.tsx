@@ -1,2 +1,0 @@
-// ARQUIVO OBSOLETO - NÃO COPIAR PARA O GITHUB
-// Use app/page.tsx

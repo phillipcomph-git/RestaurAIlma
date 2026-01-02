@@ -12,15 +12,13 @@ const cleanBase64 = (base64Str: string) => {
 
 const getAI = () => {
   // Prioridade:
-  // 1. process.env.API_KEY (Servidor Vercel ou Vite Injected)
-  // 2. process.env.NEXT_PUBLIC_API_KEY (Fallback legado/client-side explícito)
+  // 1. process.env.API_KEY (Injetado pelo Vite ou Servidor Vercel)
+  // 2. process.env.NEXT_PUBLIC_API_KEY (Fallback)
   
   const apiKey = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY;
 
   if (!apiKey || apiKey.trim() === '') {
-    console.error("DEBUG: API Key está vazia. Verifique se a chave foi selecionada no painel ou configurada no .env.");
-    // Não lança erro imediatamente, tenta instanciar e deixar a lib reclamar se necessário,
-    // mas loga o aviso crítico.
+    console.error("DEBUG: API Key está vazia. Verifique se a chave foi selecionada no painel.");
     throw new Error("API_KEY_MISSING");
   }
   

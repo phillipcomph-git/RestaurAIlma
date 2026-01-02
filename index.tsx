@@ -1,15 +1,17 @@
+
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import Home from './app/page';
 
-// Polyfill para API Key no ambiente de Preview (Client-side puro)
-if (typeof window !== 'undefined' && !(window as any).process) {
-  (window as any).process = {
-    env: {
-      NEXT_PUBLIC_API_KEY: '',
-      API_KEY: ''
-    }
-  };
+// Polyfill seguro para process.env no navegador
+if (typeof window !== 'undefined') {
+  if (!(window as any).process) {
+    (window as any).process = { env: {} };
+  }
+  // Não sobrescrevemos se o Vite já tiver definido via 'define'
+  if (!(window as any).process.env) {
+    (window as any).process.env = {};
+  }
 }
 
 const container = document.getElementById('root');

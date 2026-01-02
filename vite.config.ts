@@ -1,9 +1,10 @@
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-// Esta configuração é usada APENAS pelo preview do AI Studio.
-// O Next.js (Vercel) ignora este arquivo graças ao tsconfig.json.
+// Configuração exclusiva para o Preview (Vite).
+// O Next.js ignorará este arquivo na produção.
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -12,7 +13,8 @@ export default defineConfig({
     },
   },
   define: {
-    // Evita crash ao acessar process.env no navegador durante o preview
-    'process.env': {} 
+    // Injeta as variáveis de ambiente de forma segura no navegador do Preview
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || ''),
+    'process.env.NEXT_PUBLIC_API_KEY': JSON.stringify(process.env.NEXT_PUBLIC_API_KEY || ''),
   }
 });

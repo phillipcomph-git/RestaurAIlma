@@ -11,19 +11,14 @@ const cleanBase64 = (base64Str: string) => {
 };
 
 const getAI = () => {
-  // ATENÇÃO: Nunca deixe chaves reais hardcoded aqui se for subir para o GitHub.
-  // O Google detecta e bloqueia a chave automaticamente.
+  // Prioridade:
+  // 1. process.env.API_KEY (Servidor Vercel ou Vite Injected)
+  // 2. process.env.NEXT_PUBLIC_API_KEY (Fallback legado/client-side explícito)
   
-  // 1. Tenta pegar a chave segura do servidor (Vercel Production)
-  let apiKey = process.env.API_KEY;
-
-  // 2. Se não houver chave de servidor, tenta a pública (apenas para Preview/Local)
-  if (!apiKey) {
-    apiKey = process.env.NEXT_PUBLIC_API_KEY;
-  }
+  const apiKey = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY;
 
   if (!apiKey || apiKey.trim() === '') {
-    console.error("ERRO CRÍTICO: API Key não configurada. Verifique as variáveis de ambiente na Vercel.");
+    console.error("ERRO CRÍTICO: API Key não encontrada.");
     throw new Error("API_KEY_MISSING");
   }
   
@@ -87,7 +82,7 @@ export const processImage = async (
   } catch (err: any) {
     console.error("Erro detalhado do Gemini:", err);
     const msg = err.message || "Erro desconhecido";
-    if (msg.includes("API_KEY")) throw new Error("Chave de API inválida. Verifique as configurações.");
+    if (msg.includes("API_KEY")) throw new Error("Chave de API inválida ou não configurada.");
     throw err;
   }
 };

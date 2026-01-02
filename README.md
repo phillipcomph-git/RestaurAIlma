@@ -3,63 +3,25 @@
 
 **RestaurAIlma** é uma aplicação avançada para restauração, colorização e reconstrução de imagens usando Inteligência Artificial (Google Gemini 2.5 Flash).
 
-## 📂 Como enviar para o GitHub
+## 🚀 Como Deployar na Vercel
 
-Como este código foi gerado em ambiente Cloud (AI Studio), siga estes passos para criar seu repositório:
+1. **GitHub**:
+   - Suba todos os arquivos deste projeto para um repositório no GitHub.
+   - **Atenção:** Não suba chaves de API reais no código (no arquivo `geminiService.ts`). Use variáveis de ambiente.
 
-1. **Crie o Repositório**:
-   - Vá no GitHub e crie um novo repositório vazio (público ou privado).
+2. **Vercel**:
+   - Crie um novo projeto na Vercel e importe seu repositório.
+   - A Vercel detectará que é **Next.js**. As configurações de build padrão funcionam.
 
-2. **Prepare os Arquivos**:
-   - Crie uma pasta no seu computador chamada `restaurailma`.
-   - Baixe/Copie os arquivos deste projeto mantendo a estrutura abaixo. **Ignore** arquivos como `index.html`, `index.tsx` e `App.tsx` que estão marcados como obsoletos.
+3. **Configuração da Chave (Importante)**:
+   - Vá em **Settings > Environment Variables** no painel da Vercel.
+   - Adicione uma nova variável:
+     - **Key:** `NEXT_PUBLIC_API_KEY`
+     - **Value:** (Sua chave do Google Gemini aqui)
+   
+   *Sem o prefixo `NEXT_PUBLIC_`, o aplicativo não funcionará no navegador.*
 
-   **Estrutura Correta:**
-   ```
-   /restaurailma
-   ├── app/
-   │   ├── api/
-   │   │   ├── chat/
-   │   │   ├── generate-image/
-   │   │   ├── merge-images/
-   │   │   └── process-image/
-   │   ├── globals.css
-   │   ├── layout.tsx
-   │   └── page.tsx
-   ├── components/ (Todos os componentes: Button.tsx, Uploader.tsx, etc)
-   ├── hooks/ (useImageProcessing.ts)
-   ├── services/ (geminiService.ts)
-   ├── types.ts
-   ├── next.config.js
-   ├── package.json
-   ├── postcss.config.mjs
-   ├── tailwind.config.ts
-   ├── tsconfig.json
-   └── .gitignore
-   ```
+## 📂 Estrutura Híbrida
 
-3. **Suba o Código**:
-   - Abra o terminal na pasta `restaurailma`.
-   - Rode:
-     ```bash
-     git init
-     git add .
-     git commit -m "Primeiro commit"
-     git branch -M main
-     git remote add origin SEU_LINK_DO_GITHUB_AQUI
-     git push -u origin main
-     ```
-
-## 🚀 Funcionalidades
-
-- **Reconstrução**: Preenche partes faltando da imagem (Inpainting via Prompt).
-- **Restauração**: Remove riscos e danos físicos.
-- **Colorização**: Colore fotos P&B.
-- **Melhoria**: Aumenta nitidez e resolução.
-
-## 🛠️ Stack
-
-- Next.js 15
-- React 19
-- Tailwind CSS
-- Google Gemini API
+- **Preview (AI Studio)**: Roda via `index.html` + Vite.
+- **Produção (Vercel)**: Roda via `app/layout.tsx` + Next.js.

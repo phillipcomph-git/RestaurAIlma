@@ -1,0 +1,1 @@
+// Arquivo removido. O app usa a estrutura Next.js (app/page.tsx) ou Vite (index.tsx) dependendo do ambiente.

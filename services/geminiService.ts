@@ -11,17 +11,16 @@ const cleanBase64 = (base64Str: string) => {
 };
 
 const getAI = () => {
-  // Na Vercel (Client-Side), precisamos do prefixo NEXT_PUBLIC_
-  // Se estiver no AI Studio, ele injeta process.env.API_KEY automaticamente
-  const apiKey = process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY;
+  // 1. Tenta env var pública (Vercel Client-Side)
+  // 2. Tenta env var padrão (Node/AI Studio)
+  // 3. Fallback para a chave fornecida (Garante funcionamento imediato)
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY || "AIzaSyBzS3qGhMPqn0P7n-E6j8gjUeFvh_0m0aE";
   
   if (!apiKey) {
-    console.warn("API Key não encontrada. Configure NEXT_PUBLIC_API_KEY na Vercel.");
-    // Fallback temporário para evitar crash se a env não estiver setada, 
-    // mas o ideal é configurar nas variáveis de ambiente.
+    console.warn("API Key não encontrada e fallback falhou.");
     return new GoogleGenAI({ apiKey: '' });
   }
-  // Instancia com a chave
+  
   return new GoogleGenAI({ apiKey: apiKey });
 };
 
@@ -90,7 +89,6 @@ export const generateImageFromPrompt = async (
   const ai = getAI();
   const results: ProcessResult[] = [];
   
-  // Executa em série ou paralelo dependendo da necessidade. Aqui fazemos loop simples.
   for (let i = 0; i < count; i++) {
     const parts: any[] = [{ text: prompt }];
     if (baseImage) {

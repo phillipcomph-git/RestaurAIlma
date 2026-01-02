@@ -13,9 +13,10 @@ export default defineConfig({
     },
   },
   define: {
-    // Injeta as variáveis de ambiente de forma segura no navegador do Preview
-    // Tenta pegar API_KEY do processo do Node (container), fallback para string vazia
-    'process.env.API_KEY': JSON.stringify(process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY || ''),
+    // Removemos a definição forçada de 'process.env.API_KEY' para permitir que
+    // o ambiente (como IDX ou AI Studio) injete a variável globalmente se necessário.
+    // Apenas definimos se ela realmente existir no processo de build.
+    ...(process.env.API_KEY ? { 'process.env.API_KEY': JSON.stringify(process.env.API_KEY) } : {}),
     'process.env.NEXT_PUBLIC_API_KEY': JSON.stringify(process.env.NEXT_PUBLIC_API_KEY || ''),
   }
 });

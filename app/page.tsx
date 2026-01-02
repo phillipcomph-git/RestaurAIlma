@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -17,6 +16,9 @@ import { ImageComparator } from '@/components/ImageComparator';
 import { Button } from '@/components/Button';
 import { useImageProcessing } from '@/hooks/useImageProcessing';
 import { ImageState, MergeState, AppTab, ProcessingStatus, RestorationMode, ActionOption, HistoryItem, AppSettings, GenerateState } from '@/types';
+
+// Declaração removida para evitar conflito com tipos globais existentes
+// O acesso será feito via cast (window as any).aistudio
 
 const RESTORATION_OPTIONS: ActionOption[] = [
   {
@@ -114,6 +116,7 @@ export default function Home() {
   const [activeMode, setActiveMode] = useState<RestorationMode | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [apiKeyMissing, setApiKeyMissing] = useState(false);
   
   const [generateState, setGenerateState] = useState<GenerateState>({
     prompt: '', baseImage: null, baseMimeType: null, results: null, resultIndex: 0
@@ -134,6 +137,13 @@ export default function Home() {
     setIsClient(true);
     setSettings(safeStorage.load('restaurai_settings', { language: 'pt', theme: 'dark', preferredModel: 'gemini-2.5-flash-image' }));
     setHistory(safeStorage.load('restaurai_history', []));
+
+    // Verifica se existe integração com AI Studio e se a chave já foi selecionada
+    if (typeof window !== 'undefined' && (window as any).aistudio) {
+      (window as any).aistudio.hasSelectedApiKey().then((has: boolean) => {
+        if (!has) setApiKeyMissing(true);
+      });
+    }
   }, []);
 
   useEffect(() => { setStatus(isProcessing ? 'processing' : 'idle'); }, [isProcessing]);
@@ -152,9 +162,27 @@ export default function Home() {
   const textSub = isLight ? 'text-slate-600 font-medium' : 'text-slate-400 font-light';
   const utilityIconColor = isLight ? 'text-indigo-600 hover:text-indigo-700' : 'text-yellow-400 hover:text-yellow-300';
 
+  const handleSelectApiKey = async () => {
+    if ((window as any).aistudio) {
+      await (window as any).aistudio.openSelectKey();
+      const has = await (window as any).aistudio.hasSelectedApiKey();
+      if (has) {
+        setApiKeyMissing(false);
+        setErrorMsg(null);
+        // Recarrega para garantir que a chave seja injetada
+        window.location.reload(); 
+      }
+    } else {
+      alert("A seleção automática não está disponível neste ambiente. Por favor, configure a variável API_KEY.");
+    }
+  };
+
   const handleApiError = (err: any) => {
     let msg = err.message || "Erro de conexão com a API.";
-    if (msg.includes("API_KEY")) msg = "Chave de API inválida ou não encontrada.";
+    if (msg.includes("API_KEY") || msg.includes("API key")) {
+      msg = "Chave de API necessária.";
+      setApiKeyMissing(true);
+    }
     if (msg.includes("403")) msg = "Acesso negado (Verifique a API Key).";
     
     setErrorMsg(msg);
@@ -327,7 +355,20 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        {errorMsg && (
+        {apiKeyMissing && (
+          <div className="mb-6 p-6 rounded-3xl border bg-indigo-900/20 border-indigo-500/50 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-4 duration-500">
+             <div className="flex items-center gap-4">
+               <div className="p-3 bg-indigo-600 rounded-full animate-pulse"><Key className="w-6 h-6 text-white" /></div>
+               <div>
+                 <h3 className="font-bold text-indigo-400 uppercase tracking-wider text-sm">Acesso Necessário</h3>
+                 <p className="text-xs text-slate-300 mt-1">Para usar a IA, conecte sua conta Google Cloud ou selecione uma API Key.</p>
+               </div>
+             </div>
+             <Button onClick={handleSelectApiKey} variant="primary" className="whitespace-nowrap w-full sm:w-auto uppercase font-bold text-xs" icon={CreditCard}>Conectar API Key</Button>
+          </div>
+        )}
+
+        {errorMsg && !apiKeyMissing && (
           <div className="mb-6 p-5 rounded-3xl border bg-red-500/10 border-red-500/30 text-red-600 text-xs font-bold shadow-xl flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
               <div className="p-2 rounded-full bg-red-500 text-white"><AlertCircle className="w-5 h-5" /></div>
               <div className="flex-1"><p className="text-sm uppercase mb-1 font-bold">Atenção</p><p className="font-light">{errorMsg}</p></div>

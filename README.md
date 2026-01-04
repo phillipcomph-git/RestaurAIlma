@@ -1,41 +1,54 @@
-
 # RestaurAIlma 🎨✨
 
 > "Para conservar a memória de quem nos trouxe até aqui. S2 Ilma."
 
-**RestaurAIlma** é uma aplicação de ponta para restauração e manipulação de imagens, utilizando o poder dos modelos Gemini 2.5 Flash da Google. Projetada com foco em UX/UI minimalista e elegante, ela permite recuperar fotos antigas, colorir memórias e criar novas artes.
+**RestaurAIlma** é uma aplicação Fullstack Next.js para restauração e manipulação de imagens, utilizando o poder dos modelos Gemini 2.5 Flash da Google.
 
-## 🚀 Funcionalidades Principais
+## 🚀 Funcionalidades
 
-- **🛡️ Restauração**: Repara danos físicos, remove riscos e limpa ruídos de fotos antigas.
-- **🎨 Colorização**: Aplica cores naturais e realistas a fotos monocromáticas.
-- **✨ Aprimoramento**: Melhora a nitidez e a definição de detalhes usando Super Resolution.
-- **🧬 Mesclagem (Merge)**: Funde características de duas fotos diferentes em uma nova imagem única.
-- **🖼️ Geração Criativa**: Gera imagens a partir de texto (1x, 2x ou 4x variações) com suporte a imagem de referência.
-- **🤖 Concierge IA**: Um chat assistente integrado para tirar dúvidas sobre o processo de restauração.
+- **Restauração**: Repara danos físicos e ruídos.
+- **Colorização**: Aplica cores em fotos P&B.
+- **Mesclagem**: Funde duas fotos em uma.
+- **Concierge IA**: Chat assistente integrado.
+- **Multi-idioma**: Suporte a PT, EN, ES, CN.
 
-## 🛠️ Stack Tecnológica
+## 📦 Como fazer Deploy (GitHub + Vercel)
 
-- **Frontend**: React 19 + Tailwind CSS
-- **Iconografia**: Lucide React
-- **IA/Engine**: Google Gemini API (`gemini-2.5-flash-image` & `gemini-3-flash-preview`)
-- **Backend**: Vercel Serverless Functions (Node.js 20)
-- **Segurança**: Arquitetura BFF que protege a API Key no lado do servidor.
+Este projeto já está configurado para Next.js. Siga os passos abaixo para colocar no ar:
 
-## 📦 Deploy em 1 Minuto na Vercel
+### Passo 1: GitHub
+1. Crie um novo repositório no [GitHub](https://github.com/new).
+2. No seu terminal, envie os arquivos:
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit - RestaurAIlma"
+   git branch -M main
+   git remote add origin https://github.com/SEU_USUARIO/SEU_REPOSITORIO.git
+   git push -u origin main
+   ```
 
-1. Clique em **New Project** no dashboard da Vercel.
-2. Importe seu repositório do GitHub.
-3. Configure as **Environment Variables**:
-   - `API_KEY`: Sua chave do Google Gemini (obtenha em [ai.google.dev](https://ai.google.dev/)).
-4. Clique em **Deploy**.
+### Passo 2: Vercel
+1. Acesse [vercel.com](https://vercel.com) e faça login.
+2. Clique em **"Add New..."** -> **"Project"**.
+3. Importe o repositório do GitHub que você acabou de criar.
+4. Nas configurações do projeto (Configure Project), vá em **Environment Variables**:
+   - **Key:** `API_KEY`
+   - **Value:** Sua chave da API do Google Gemini (Obtenha em [aistudio.google.com](https://aistudio.google.com/)).
+5. Clique em **Deploy**.
 
-## 💻 Como Rodar Localmente
+### Importante
+- A aplicação utiliza **Server-Side Functions** (`/api/...`) para proteger sua chave de API. A chave nunca é exposta ao navegador.
+- Se o deploy falhar por falta de dependências, a Vercel instalará automaticamente com base no `package.json`.
 
-1. Clone o repositório.
-2. Instale as dependências: `npm install`.
-3. Configure o arquivo `.env` com sua `API_KEY`.
-4. Inicie o servidor de desenvolvimento: `npm run dev`.
+## 💻 Rodando Localmente
+
+1. `npm install`
+2. Crie um arquivo `.env.local` na raiz:
+   ```env
+   API_KEY=sua_chave_aqui
+   ```
+3. `npm run dev`
 
 ---
-*Desenvolvido com carinho e tecnologia para preservar o que realmente importa.*
+*Desenvolvido com carinho e tecnologia.*

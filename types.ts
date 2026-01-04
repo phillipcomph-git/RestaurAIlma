@@ -66,11 +66,12 @@ export interface HistoryItem {
   description?: string;
 }
 
-export type Language = 'pt' | 'en';
+export type Language = 'pt' | 'en' | 'es' | 'cn';
 export type Theme = 'dark' | 'light';
 
 export interface AppSettings {
   language: Language;
   theme: Theme;
+  scale: number; // 1 | 1.25 | 1.5
   preferredModel: string;
 }

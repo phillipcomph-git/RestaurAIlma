@@ -12,7 +12,7 @@ const compressImage = (base64Str: string): Promise<string> => {
 
     img.onload = () => {
       clearTimeout(timeoutId);
-      const maxWidth = 768; // Otimizado para payload de API serverless
+      const maxWidth = 768; // Podemos usar um pouco mais de qualidade no client-side
       let width = img.width;
       let height = img.height;
 
@@ -45,33 +45,6 @@ const compressImage = (base64Str: string): Promise<string> => {
   });
 };
 
-// Helper para tentar usar API Server-side primeiro, fallback para Client-side
-async function tryServerApi(endpoint: string, body: any, fallbackFn: () => Promise<any>) {
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-
-    // Se recebermos HTML (comum em erros 404 do Vite/SPA) ou 404, jogamos erro para usar fallback
-    const contentType = response.headers.get("content-type");
-    if (!response.ok || !contentType || !contentType.includes("application/json")) {
-      throw new Error("API indisponível ou erro no servidor");
-    }
-
-    const data = await response.json();
-    if (data.error) throw new Error(data.error);
-    
-    // Algumas APIs retornam array, outras objeto. Normalizamos aqui se necessário.
-    return Array.isArray(data) ? data[0] : data;
-    
-  } catch (error) {
-    console.warn(`Tentativa de API Server-side falhou (${endpoint}), usando fallback Client-side.`, error);
-    return fallbackFn();
-  }
-}
-
 export function useImageProcessing() {
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -82,16 +55,13 @@ export function useImageProcessing() {
     try {
       const optimizedImage = await compressImage(base64Image);
       
+      // Chamadas paralelas diretas ao serviço
       const promises = Array(count).fill(0).map(() => 
-        tryServerApi(
-          '/api/process-image',
-          { image: optimizedImage, mimeType: 'image/jpeg', prompt, model },
-          () => geminiService.processImage(optimizedImage, 'image/jpeg', prompt, model)
-        )
+        geminiService.processImage(optimizedImage, 'image/jpeg', prompt, model)
       );
 
       const results = await Promise.all(promises);
-      return results;
+      return results; // Retorna array de ProcessResult
     } catch (error: any) {
       console.error(error);
       throw new Error(error.message || "Falha ao processar imagem.");
@@ -107,19 +77,8 @@ export function useImageProcessing() {
       const optimizedA = await compressImage(imageA);
       const optimizedB = await compressImage(imageB);
 
-      const promises = Array(count).fill(0).map(() => 
-        tryServerApi(
-            '/api/merge-images',
-            { imageA: optimizedA, mimeA: 'image/jpeg', imageB: optimizedB, mimeB: 'image/jpeg', prompt },
-            async () => {
-                const res = await geminiService.mergeImages(optimizedA, 'image/jpeg', optimizedB, 'image/jpeg', prompt, 1);
-                return res[0];
-            }
-        )
-      );
-      
-      const results = await Promise.all(promises);
-      if (results.length === 0 || !results[0]) throw new Error("Não foi possível mesclar as imagens.");
+      const results = await geminiService.mergeImages(optimizedA, 'image/jpeg', optimizedB, 'image/jpeg', prompt, count);
+      if (results.length === 0) throw new Error("Não foi possível mesclar as imagens.");
       return results;
     } catch (error: any) {
        console.error(error);
@@ -139,19 +98,8 @@ export function useImageProcessing() {
         payloadBaseImage = { data: optimized, mimeType: 'image/jpeg' };
       }
 
-      const promises = Array(count).fill(0).map(() => 
-        tryServerApi(
-            '/api/generate-image',
-            { prompt, aspectRatio, baseImage: payloadBaseImage },
-            async () => {
-                const res = await geminiService.generateImageFromPrompt(prompt, 1, aspectRatio, payloadBaseImage);
-                return res[0];
-            }
-        )
-      );
-
-      const results = await Promise.all(promises);
-      if (results.length === 0 || !results[0]) throw new Error("Não foi possível gerar a imagem.");
+      const results = await geminiService.generateImageFromPrompt(prompt, count, aspectRatio, payloadBaseImage);
+      if (results.length === 0) throw new Error("Não foi possível gerar a imagem.");
       return results;
     } catch (error: any) {
         console.error(error);
@@ -162,11 +110,7 @@ export function useImageProcessing() {
   }, [isProcessing]);
 
   const chat = useCallback(async (message: string): Promise<string> => {
-    return tryServerApi(
-        '/api/chat',
-        { message },
-        () => geminiService.chatWithAI(message, [])
-    ).then(res => res.text || res); // A API retorna { text: ... }, o serviço retorna string direta
+    return await geminiService.chatWithAI(message, []);
   }, []);
 
   return { processImage, mergeImages, generateImage, chat, isProcessing };

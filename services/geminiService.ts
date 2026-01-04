@@ -11,22 +11,17 @@ const cleanBase64 = (base64Str: string) => {
 };
 
 const getAI = () => {
-  // Prioridade:
-  // 1. process.env.API_KEY (Injetado pelo Vite/Next build)
-  // 2. process.env.NEXT_PUBLIC_API_KEY (Fallback build)
-  // 3. localStorage (Inserção manual do usuário)
+  // Na Vercel (Client-Side), precisamos do prefixo NEXT_PUBLIC_
+  // Se estiver no AI Studio, ele injeta process.env.API_KEY automaticamente
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY || process.env.API_KEY;
   
-  let apiKey = process.env.API_KEY || process.env.NEXT_PUBLIC_API_KEY;
-
-  if ((!apiKey || apiKey.trim() === '') && typeof window !== 'undefined') {
-    apiKey = localStorage.getItem('gemini_api_key') || undefined;
+  if (!apiKey) {
+    console.warn("API Key não encontrada. Configure NEXT_PUBLIC_API_KEY na Vercel.");
+    // Fallback temporário para evitar crash se a env não estiver setada, 
+    // mas o ideal é configurar nas variáveis de ambiente.
+    return new GoogleGenAI({ apiKey: '' });
   }
-
-  if (!apiKey || apiKey.trim() === '') {
-    console.error("DEBUG: API Key está vazia.");
-    throw new Error("API_KEY_MISSING");
-  }
-  
+  // Instancia com a chave
   return new GoogleGenAI({ apiKey: apiKey });
 };
 
@@ -34,7 +29,7 @@ export const chatWithAI = async (message: string, history: any[]): Promise<strin
   try {
     const ai = getAI();
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3-flash-preview", // Modelo de texto
       contents: [{ parts: [{ text: message }] }],
       config: {
         systemInstruction: "Você é o Concierge da RestaurAIlma, um app de restauração de fotos. Seja breve, gentil e útil.",
@@ -43,7 +38,7 @@ export const chatWithAI = async (message: string, history: any[]): Promise<strin
     return response.text || "Sem resposta.";
   } catch (error: any) {
     console.error("Chat Error:", error);
-    return "O assistente está dormindo um pouco. Tente novamente.";
+    return "Não foi possível conectar ao assistente no momento.";
   }
 };
 
@@ -51,54 +46,39 @@ export const processImage = async (
   base64Image: string,
   mimeType: string,
   promptInstruction: string,
-  modelPreference: string = 'gemini-2.5-flash-image',
-  count: number = 1
-): Promise<ProcessResult[]> => {
+  modelPreference: string = 'gemini-2.5-flash-image'
+): Promise<ProcessResult> => {
   const ai = getAI();
   const safeMimeType = mimeType.startsWith('image/') ? mimeType : 'image/jpeg';
   const data = cleanBase64(base64Image);
 
   if (!data) throw new Error("Imagem inválida.");
 
-  const results: ProcessResult[] = [];
-
-  // Loop para gerar múltiplas variações se count > 1
-  for (let i = 0; i < count; i++) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelPreference,
-        contents: {
-          parts: [
-            { inlineData: { mimeType: safeMimeType, data: data } },
-            { text: `Restaure esta imagem. ${promptInstruction}` }
-          ]
-        },
-        config: {
-          temperature: 0.3 + (i * 0.1), // Pequena variação na temperatura para gerar resultados diferentes
-        }
-      });
-
-      const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-      const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
-
-      if (imgPart?.inlineData?.data) {
-        results.push({
-          base64: `data:${imgPart.inlineData.mimeType || 'image/jpeg'};base64,${imgPart.inlineData.data}`,
-          model: modelPreference,
-          description: textPart?.text
-        });
-      }
-    } catch (err: any) {
-      console.error("Erro detalhado do Gemini:", err);
-      const msg = err.message || "Erro desconhecido";
-      if (msg.includes("API_KEY") || msg.includes("API key")) throw new Error("Chave de API inválida ou não configurada.");
-      // Se for apenas uma das tentativas falhando, continuamos
-      if (count === 1) throw err;
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image', // Força modelo correto
+    contents: {
+      parts: [
+        { inlineData: { mimeType: safeMimeType, data: data } },
+        { text: `Restaure esta imagem. ${promptInstruction}` }
+      ]
+    },
+    config: {
+      temperature: 0.3,
     }
+  });
+
+  const imgPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+  const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
+
+  if (imgPart?.inlineData?.data) {
+    return {
+      base64: `data:${imgPart.inlineData.mimeType || 'image/jpeg'};base64,${imgPart.inlineData.data}`,
+      model: 'gemini-2.5-flash-image',
+      description: textPart?.text
+    };
   }
-  
-  if (results.length === 0) throw new Error("A IA processou mas não retornou a imagem.");
-  return results;
+
+  throw new Error("A IA não retornou uma imagem restaurada.");
 };
 
 export const generateImageFromPrompt = async (
@@ -110,6 +90,7 @@ export const generateImageFromPrompt = async (
   const ai = getAI();
   const results: ProcessResult[] = [];
   
+  // Executa em série ou paralelo dependendo da necessidade. Aqui fazemos loop simples.
   for (let i = 0; i < count; i++) {
     const parts: any[] = [{ text: prompt }];
     if (baseImage) {

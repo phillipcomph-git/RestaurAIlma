@@ -12,12 +12,6 @@ body {
   background: var(--background);
   color: var(--foreground);
   overflow-x: hidden;
-  font-family: var(--font-jost), sans-serif; /* Força a fonte globalmente */
-}
-
-/* Garante que inputs e textareas herdem a fonte correta e não fiquem 'crus' */
-input, textarea, button, select {
-  font-family: inherit;
 }
 
 .tracking-elegant {
